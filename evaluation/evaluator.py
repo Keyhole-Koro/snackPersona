@@ -3,6 +3,7 @@ from typing import List, Dict
 import json
 from snackPersona.utils.data_models import FitnessScores, PersonaGenotype
 from snackPersona.llm.llm_client import LLMClient
+from snackPersona.evaluation.diversity import DiversityEvaluator
 
 class Evaluator(ABC):
     """
@@ -27,13 +28,18 @@ class BasicEvaluator(Evaluator):
             avg_len = sum(len(p.get('content', '')) for p in my_posts) / len(my_posts)
         coherence = min(avg_len / 100.0, 1.0)
         
+        # Heuristic 3: Diversity - evaluate diversity of this persona's contributions
+        diversity = 0.0
+        if len(my_posts) >= 2:
+            diversity = DiversityEvaluator.calculate_overall_diversity(my_posts)
+        
         return FitnessScores(
             conversation_quality=coherence,
             engagement=engagement,
             persona_fidelity=0.5, # Placeholder
             social_intelligence=0.5,
             safety=1.0,
-            diversity=0.0
+            diversity=diversity
         )
 
 class LLMEvaluator(Evaluator):
@@ -82,6 +88,13 @@ class LLMEvaluator(Evaluator):
                 response = response.split("```")[1].split("```")[0]
                 
             scores_dict = json.loads(response.strip())
+            
+            # Add diversity evaluation for persona's posts
+            diversity = 0.0
+            if len(my_events) >= 2:
+                diversity = DiversityEvaluator.calculate_overall_diversity(my_events)
+            scores_dict['diversity'] = diversity
+            
             return FitnessScores(**scores_dict)
         except Exception as e:
             print(f"Error parsing LLM evaluation: {e} | Response: {response}")

@@ -1,4 +1,4 @@
-from snackPersona.utils.data_models import PersonaPhenotype, PersonaGenotype
+from snackPersona.utils.data_models import PersonaPhenotype, PersonaGenotype, MediaItem
 from snackPersona.llm.llm_client import LLMClient
 from snackPersona.compiler.compiler import compile_persona
 from typing import List, Dict, Optional
@@ -54,3 +54,32 @@ class SimulationAgent:
 
     def reset_memory(self):
         self.memory = []
+    
+    def generate_media_reaction(self, media_item: MediaItem) -> str:
+        """
+        Generates a reaction/post in response to a media item (article, content).
+        
+        Args:
+            media_item: The media item to react to.
+            
+        Returns:
+            The generated reaction text.
+        """
+        user_prompt = f"""You are reading an article titled "{media_item.title}".
+
+Article content:
+{media_item.content}
+
+Write a post sharing your reaction, thoughts, or commentary on this article."""
+        
+        full_system = f"{self.phenotype.system_prompt}\n\n{self.phenotype.policy_instructions}"
+        
+        response = self.llm_client.generate_text(
+            system_prompt=full_system,
+            user_prompt=user_prompt
+        )
+        
+        # Log to memory
+        self.memory.append({"role": "user", "content": f"Article: {media_item.title}"})
+        self.memory.append({"role": "assistant", "content": response})
+        return response

@@ -9,6 +9,7 @@ from snackPersona.persona_store.store import PersonaStore
 from snackPersona.evaluation.evaluator import BasicEvaluator, LLMEvaluator
 from snackPersona.orchestrator.operators import SimpleFieldMutator, LLMMutator, MixTraitsCrossover
 from snackPersona.orchestrator.engine import EvolutionEngine
+from snackPersona.utils.media_dataset import MediaDataset
 
 def create_seed_population() -> List[PersonaGenotype]:
     """
@@ -75,6 +76,7 @@ def main():
     parser.add_argument("--pop_size", type=int, default=4, help="Population size")
     parser.add_argument("--llm", type=str, choices=["mock", "openai", "bedrock"], default="mock", help="LLM backend to use")
     parser.add_argument("--store_dir", type=str, default="persona_data", help="Directory to store persona generations")
+    parser.add_argument("--media_dataset", type=str, default=None, help="Path to JSON file containing media items for reaction-based simulation")
     
     args = parser.parse_args()
     
@@ -93,6 +95,16 @@ def main():
 
     # 2. Setup Components
     store = PersonaStore(storage_dir=args.store_dir)
+    
+    # Load media dataset if provided
+    media_dataset = None
+    if args.media_dataset:
+        if os.path.exists(args.media_dataset):
+            print(f"Loading media dataset from {args.media_dataset}...")
+            media_dataset = MediaDataset(args.media_dataset)
+            print(f"Loaded {len(media_dataset)} media items.")
+        else:
+            print(f"Warning: Media dataset file not found at {args.media_dataset}")
     
     # Use BasicEvaluator for speed/cost if mock, else LLMEvaluator
     if args.llm == "mock":
@@ -114,7 +126,8 @@ def main():
         crossover_op=crossover_op,
         population_size=args.pop_size,
         generations=args.generations,
-        elite_count=max(1, args.pop_size // 4)
+        elite_count=max(1, args.pop_size // 4),
+        media_dataset=media_dataset
     )
     
     # 4. Load or Initialize Population

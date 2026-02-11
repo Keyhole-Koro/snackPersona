@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 # ==============================================================================
 # 1. Persona Genotype and Phenotype
@@ -82,4 +82,19 @@ class Individual(BaseModel):
     genotype: PersonaGenotype
     phenotype: PersonaPhenotype
     scores: FitnessScores = Field(default_factory=FitnessScores)
+
+
+# ==============================================================================
+# 4. Media and Articles
+# ==============================================================================
+
+class MediaItem(BaseModel):
+    """
+    Represents an article or media content (text only) that personas can react to.
+    """
+    id: str = Field(description="Unique identifier for the media item.")
+    title: str = Field(description="Title of the article/media.")
+    content: str = Field(description="The text content of the article/media.")
+    category: Optional[str] = Field(default=None, description="Optional category or tag (e.g., 'tech', 'politics').")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata (e.g., source, date).")
 

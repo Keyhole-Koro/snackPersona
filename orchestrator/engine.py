@@ -1,6 +1,6 @@
 from typing import List, Callable, Optional
 import random
-from snackPersona.utils.data_models import PersonaGenotype, Individual
+from snackPersona.utils.data_models import PersonaGenotype, Individual, MediaItem
 from snackPersona.simulation.agent import SimulationAgent
 from snackPersona.simulation.environment import SimulationEnvironment
 from snackPersona.evaluation.evaluator import Evaluator
@@ -8,6 +8,7 @@ from snackPersona.orchestrator.operators import MutationOperator, CrossoverOpera
 from snackPersona.persona_store.store import PersonaStore
 from snackPersona.llm.llm_client import LLMClient
 from snackPersona.compiler.compiler import compile_persona
+from snackPersona.utils.media_dataset import MediaDataset
 
 class EvolutionEngine:
     """
@@ -23,7 +24,8 @@ class EvolutionEngine:
         crossover_op: CrossoverOperator,
         population_size: int = 10,
         generations: int = 5,
-        elite_count: int = 2
+        elite_count: int = 2,
+        media_dataset: Optional[MediaDataset] = None
     ):
         self.llm_client = llm_client
         self.store = store
@@ -33,6 +35,7 @@ class EvolutionEngine:
         self.population_size = population_size
         self.generations = generations
         self.elite_count = elite_count
+        self.media_dataset = media_dataset
         
         self.population: List[Individual] = []
         self.current_generation = 0
@@ -93,7 +96,17 @@ class EvolutionEngine:
             
             # Run Simulation
             env = SimulationEnvironment(sim_agents)
+            
+            # Run both traditional episode and media episode if dataset available
             transcript = env.run_episode(rounds=2)
+            
+            # If media dataset is available, also run a media-based episode
+            if self.media_dataset and len(self.media_dataset) > 0:
+                media_items = self.media_dataset.get_all_media_items()
+                selected_media = random.choice(media_items)
+                media_transcript = env.run_media_episode(selected_media, rounds=1)
+                # Combine transcripts
+                transcript.extend(media_transcript)
             
             # Evaluate each individual based on the transcript
             for ind, transcript_data in zip(group_individuals, [transcript]*len(group_individuals)):
@@ -103,7 +116,7 @@ class EvolutionEngine:
                  ind.scores = scores
                  
                  # Print a quick summary
-                 print(f"Agent {ind.genotype.name}: Engagement={scores.engagement:.2f}, Coherence={scores.conversation_quality:.2f}")
+                 print(f"Agent {ind.genotype.name}: Engagement={scores.engagement:.2f}, Coherence={scores.conversation_quality:.2f}, Diversity={scores.diversity:.2f}")
 
     def _produce_next_generation(self) -> List[Individual]:
         """
