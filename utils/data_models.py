@@ -8,29 +8,33 @@ from typing import List, Dict, Any
 
 class PersonaGenotype(BaseModel):
     """
-    Represents the "genes" of a persona. This is a structured object
+    Represents the "genes" of a persona. This is a flexible structured object
     that can be mutated and crossed-over during evolution.
-    """
-    # Core Identity
-    name: str = Field(description="The persona's name.")
-    age: int = Field(description="The persona's age.", ge=18)
-    occupation: str = Field(description="The persona's occupation.")
-    backstory: str = Field(description="A brief backstory of the persona.")
-
-    # Traits and Values
-    core_values: List[str] = Field(description="A list of core values (e.g., 'honesty', 'curiosity').")
-    hobbies: List[str] = Field(description="A list of hobbies and interests.")
-    personality_traits: Dict[str, float] = Field(
-        description="Key personality traits on a 0-1 scale (e.g., {'introversion': 0.8, 'agreeableness': 0.3})."
-    )
-
-    # Behavioral and Interaction Style
-    communication_style: str = Field(description="e.g., 'formal', 'casual', 'witty', 'academic'.")
-    topical_focus: str = Field(description="The main topics the persona talks about (e.g., 'tech', 'art').")
-    interaction_policy: str = Field(description="How the persona interacts (e.g., 'asks questions', 'debates').")
     
-    # Goals
-    goals: List[str] = Field(description="The persona's goals within the SNS (e.g., 'make friends', 'share knowledge').")
+    The genotype now supports dynamic fields through the 'attributes' dictionary,
+    allowing the LLM to define and modify the structure as needed.
+    """
+    # Core Identity (required for identification)
+    name: str = Field(description="The persona's name (required for identification).")
+    
+    # Flexible attributes - LLM can define any structure here
+    attributes: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Flexible dictionary containing all persona attributes. "
+                   "The LLM can define any structure here including: age, occupation, backstory, "
+                   "core_values, hobbies, personality_traits, communication_style, topical_focus, "
+                   "interaction_policy, goals, or any other custom fields."
+    )
+    
+    # Helper method to get attributes with defaults
+    def get(self, key: str, default: Any = None) -> Any:
+        """Get an attribute value with a default fallback."""
+        return self.attributes.get(key, default)
+    
+    # Helper method to set attributes
+    def set(self, key: str, value: Any) -> None:
+        """Set an attribute value."""
+        self.attributes[key] = value
 
 
 class PersonaPhenotype(BaseModel):

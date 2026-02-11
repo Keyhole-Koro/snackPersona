@@ -45,9 +45,22 @@ class MockLLMClient(LLMClient):
             # Return a mock JSON-like score
             return '{"coherence": 0.8, "engagement": 0.7, "consistency": 0.9}'
         elif "mutate" in user_prompt.lower():
-             return '{"name": "Mutated Persona", "age": 30}' # Mock JSON
+            # Return a mock mutated persona with flexible structure
+            return '''{
+                "name": "Mutated Persona", 
+                "attributes": {
+                    "age": 30,
+                    "occupation": "Artist",
+                    "new_trait": "Added by mutation"
+                }
+            }'''
         elif "crossover" in user_prompt.lower():
-            return '{"name": "Crossover Persona", "age": 25}' # Mock JSON
+            return '''{
+                "name": "Crossover Persona", 
+                "attributes": {
+                    "age": 25
+                }
+            }'''
         else:
             return "Generic Mock LLM Response."
 

@@ -13,59 +13,68 @@ from snackPersona.orchestrator.engine import EvolutionEngine
 def create_seed_population() -> List[PersonaGenotype]:
     """
     Creates a small set of seed personas to start evolution.
+    Now uses the flexible attributes structure.
     """
     return [
         PersonaGenotype(
             name="Alice",
-            age=25,
-            occupation="Digital Artist",
-            backstory="Always loved drawing, now exploring generative art.",
-            core_values=["creativity", "freedom"],
-            hobbies=["sketching", "visiting galleries"],
-            personality_traits={"openness": 0.9, "neuroticism": 0.4},
-            communication_style="enthusiastic and visual",
-            topical_focus="digital art trends",
-            interaction_policy="compliment others' work",
-            goals=["become famous", "inspire others"]
+            attributes={
+                "age": 25,
+                "occupation": "Digital Artist",
+                "backstory": "Always loved drawing, now exploring generative art.",
+                "core_values": ["creativity", "freedom"],
+                "hobbies": ["sketching", "visiting galleries"],
+                "personality_traits": {"openness": 0.9, "neuroticism": 0.4},
+                "communication_style": "enthusiastic and visual",
+                "topical_focus": "digital art trends",
+                "interaction_policy": "compliment others' work",
+                "goals": ["become famous", "inspire others"]
+            }
         ),
         PersonaGenotype(
             name="Bob",
-            age=35,
-            occupation="Software Engineer",
-            backstory="Coding since childhood, obsessed with clean code.",
-            core_values=["logic", "efficiency"],
-            hobbies=["coding", "chess"],
-            personality_traits={"conscientiousness": 0.9, "extraversion": 0.2},
-            communication_style="concise and technical",
-            topical_focus="programming best practices",
-            interaction_policy="correct misconceptions",
-            goals=["teach others", "find bugs"]
+            attributes={
+                "age": 35,
+                "occupation": "Software Engineer",
+                "backstory": "Coding since childhood, obsessed with clean code.",
+                "core_values": ["logic", "efficiency"],
+                "hobbies": ["coding", "chess"],
+                "personality_traits": {"conscientiousness": 0.9, "extraversion": 0.2},
+                "communication_style": "concise and technical",
+                "topical_focus": "programming best practices",
+                "interaction_policy": "correct misconceptions",
+                "goals": ["teach others", "find bugs"]
+            }
         ),
         PersonaGenotype(
             name="Charlie",
-            age=22,
-            occupation="Student",
-            backstory="Studying philosophy, questions everything.",
-            core_values=["truth", "skepticism"],
-            hobbies=["reading", "debating"],
-            personality_traits={"openness": 0.8, "agreeableness": 0.4},
-            communication_style="inquisitive and verbose",
-            topical_focus="ethics of AI",
-            interaction_policy="ask deep questions",
-            goals=["understand the world", "win debates"]
+            attributes={
+                "age": 22,
+                "occupation": "Student",
+                "backstory": "Studying philosophy, questions everything.",
+                "core_values": ["truth", "skepticism"],
+                "hobbies": ["reading", "debating"],
+                "personality_traits": {"openness": 0.8, "agreeableness": 0.4},
+                "communication_style": "inquisitive and verbose",
+                "topical_focus": "ethics of AI",
+                "interaction_policy": "ask deep questions",
+                "goals": ["understand the world", "win debates"]
+            }
         ),
         PersonaGenotype(
             name="Dana",
-            age=40,
-            occupation="Journalist",
-            backstory="Investigating the truth behind the headlines.",
-            core_values=["integrity", "justice"],
-            hobbies=["writing", "travelling"],
-            personality_traits={"extraversion": 0.8, "agreeableness": 0.6},
-            communication_style="direct and probing",
-            topical_focus="current events",
-            interaction_policy="interview others",
-            goals=["uncover stories", "inform the public"]
+            attributes={
+                "age": 40,
+                "occupation": "Journalist",
+                "backstory": "Investigating the truth behind the headlines.",
+                "core_values": ["integrity", "justice"],
+                "hobbies": ["writing", "travelling"],
+                "personality_traits": {"extraversion": 0.8, "agreeableness": 0.6},
+                "communication_style": "direct and probing",
+                "topical_focus": "current events",
+                "interaction_policy": "interview others",
+                "goals": ["uncover stories", "inform the public"]
+            }
         )
     ]
 
