@@ -4,6 +4,13 @@ Demo: Flexible PersonaGenotype with Custom Attributes
 
 This demonstrates how the new flexible PersonaGenotype structure allows
 the LLM to define completely custom attributes beyond the standard ones.
+
+Requirements:
+    Set PYTHONPATH to include the snackPersona directory:
+    export PYTHONPATH=/path/to/snackPersona:$PYTHONPATH
+    
+    Or run from the repository root:
+    cd /path/to/snackPersona && python3 snackPersona/examples/flexible_genotype_demo.py
 """
 
 from snackPersona.utils.data_models import PersonaGenotype

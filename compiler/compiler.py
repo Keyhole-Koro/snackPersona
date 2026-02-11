@@ -39,11 +39,11 @@ You are an AI agent on a social network. You must adopt the following persona an
     if 'core_values' in attrs and attrs['core_values']:
         values = attrs['core_values']
         if isinstance(values, list):
-            personality_fields.append(f"- **Core Values:** You believe in {', '.join(values)}.")
+            personality_fields.append(f"- **Core Values:** You believe in {', '.join(str(v) for v in values)}.")
     if 'hobbies' in attrs and attrs['hobbies']:
         hobbies = attrs['hobbies']
         if isinstance(hobbies, list):
-            personality_fields.append(f"- **Hobbies & Interests:** You are interested in {', '.join(hobbies)}.")
+            personality_fields.append(f"- **Hobbies & Interests:** You are interested in {', '.join(str(h) for h in hobbies)}.")
     if 'communication_style' in attrs:
         personality_fields.append(f"- **Communication Style:** Your communication style is generally {attrs['communication_style']}.")
     if 'personality_traits' in attrs and attrs['personality_traits']:
@@ -74,7 +74,7 @@ You are an AI agent on a social network. You must adopt the following persona an
     if 'goals' in attrs and attrs['goals']:
         goals = attrs['goals']
         if isinstance(goals, list):
-            policy_instructions += f"{rule_num}.  **Primary Goal:** Your main goal is to {', '.join(goals)}.\n"
+            policy_instructions += f"{rule_num}.  **Primary Goal:** Your main goal is to {', '.join(str(g) for g in goals)}.\n"
             rule_num += 1
     
     if 'topical_focus' in attrs:

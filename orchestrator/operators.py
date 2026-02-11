@@ -15,16 +15,26 @@ class SimpleFieldMutator(MutationOperator):
     Mutates a random field by picking from a predefined list or minor perturbation.
     Works with the flexible attributes structure.
     """
+    # Define mutation handlers for different attribute types
+    MUTATION_HANDLERS = {
+        'name': lambda genotype: setattr(genotype, 'name', genotype.name + " II") or genotype,
+        'age': lambda genotype: genotype.attributes.update({'age': genotype.attributes.get('age', 30) + random.choice([-1, 1])}) or genotype,
+        'backstory': lambda genotype: genotype.attributes.update({'backstory': genotype.attributes.get('backstory', '') + " [Recently changed perspective.]"}) or genotype,
+    }
+    
     def mutate(self, genotype: PersonaGenotype) -> PersonaGenotype:
         new_genotype = genotype.model_copy(deep=True)
         attrs = new_genotype.attributes
         
-        # Randomly choose a mutation type from available attributes
-        available_mutations = ["name"]
-        if 'age' in attrs:
-            available_mutations.append("age")
-        if 'backstory' in attrs:
-            available_mutations.append("backstory")
+        # Build list of available mutations based on what exists
+        available_mutations = ['name']  # name is always available
+        for attr_name in ['age', 'backstory']:
+            if attr_name in attrs:
+                available_mutations.append(attr_name)
+        
+        # If only name is available and nothing else, still include age/backstory as options
+        if len(available_mutations) == 1:
+            available_mutations.extend(['age', 'backstory'])
         
         mutation_type = random.choice(available_mutations)
         
@@ -119,13 +129,17 @@ class MixTraitsCrossover(CrossoverOperator):
                 if random.random() > 0.3:
                     child_attrs[key] = attrs_b[key]
         
-        # Special handling for list attributes - merge them
+        # Special handling for list attributes - merge them more carefully
         for key in ['goals', 'core_values', 'hobbies']:
             if key in attrs_a and key in attrs_b:
                 if isinstance(attrs_a[key], list) and isinstance(attrs_b[key], list):
-                    # Mix lists from both parents
-                    merged = attrs_a[key][:len(attrs_a[key])//2] + attrs_b[key][len(attrs_b[key])//2:]
-                    child_attrs[key] = list(set(merged))  # Remove duplicates
+                    # Take approximately half from each parent, ensuring we don't lose elements
+                    list_a = attrs_a[key]
+                    list_b = attrs_b[key]
+                    mid_a = (len(list_a) + 1) // 2  # Round up to avoid losing elements
+                    mid_b = len(list_b) - len(list_b) // 2  # Take the remainder from b
+                    merged = list_a[:mid_a] + list_b[mid_b:]
+                    child_attrs[key] = list(dict.fromkeys(merged))  # Remove duplicates while preserving order
         
         return PersonaGenotype(
             name=name,
