@@ -1,19 +1,34 @@
-from typing import List, Callable, Optional
+from typing import List, Callable, Optional, Dict
 import random
+import math
 from snackPersona.utils.data_models import PersonaGenotype, Individual, MediaItem
 from snackPersona.simulation.agent import SimulationAgent
 from snackPersona.simulation.environment import SimulationEnvironment
 from snackPersona.evaluation.evaluator import Evaluator
+from snackPersona.evaluation.diversity import DiversityEvaluator
 from snackPersona.orchestrator.operators import MutationOperator, CrossoverOperator
 from snackPersona.persona_store.store import PersonaStore
 from snackPersona.llm.llm_client import LLMClient
 from snackPersona.compiler.compiler import compile_persona
 from snackPersona.utils.media_dataset import MediaDataset
 
+# Fitness weight configuration
+FITNESS_WEIGHTS = {
+    'engagement': 0.35,
+    'conversation_quality': 0.35,
+    'diversity': 0.20,
+    'persona_fidelity': 0.10,
+}
+
+# Niching parameters
+NICHE_SIGMA = 0.5   # Niche radius — individuals closer than this share fitness
+NICHE_ALPHA = 1.0   # Shape parameter for sharing function
+
+
 class EvolutionEngine:
     """
     Orchestrates the evolutionary loop:
-    PopGen -> Simulation -> Evaluation -> Selection -> Reproduction -> NextGen
+    PopGen -> Simulation -> Evaluation -> Fitness Sharing -> Selection -> Reproduction -> NextGen
     """
     def __init__(
         self,
@@ -53,7 +68,67 @@ class EvolutionEngine:
             parent = random.choice(self.population).genotype
             mutant = self.mutation_op.mutate(parent)
             self.population.append(Individual(genotype=mutant, phenotype=compile_persona(mutant)))
+
+    # ------------------------------------------------------------------ #
+    #  Fitness calculation
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _raw_fitness(ind: Individual) -> float:
+        """Weighted fitness score from individual's FitnessScores."""
+        s = ind.scores
+        return (
+            FITNESS_WEIGHTS['engagement'] * s.engagement
+            + FITNESS_WEIGHTS['conversation_quality'] * s.conversation_quality
+            + FITNESS_WEIGHTS['diversity'] * s.diversity
+            + FITNESS_WEIGHTS['persona_fidelity'] * s.persona_fidelity
+        )
+
+    @staticmethod
+    def _sharing_function(distance: float) -> float:
+        """
+        Fitness sharing function.
+        Returns 1 when distance=0, 0 when distance>=sigma.
+        """
+        if distance >= NICHE_SIGMA:
+            return 0.0
+        return 1.0 - (distance / NICHE_SIGMA) ** NICHE_ALPHA
+
+    def _apply_fitness_sharing(self):
+        """
+        Niching via fitness sharing.
+        Each individual's fitness is divided by its niche count,
+        penalising clusters of similar genotypes.
+        """
+        n = len(self.population)
+        
+        # Precompute pairwise genotype distances
+        distances: Dict[tuple, float] = {}
+        for i in range(n):
+            for j in range(i + 1, n):
+                d = DiversityEvaluator.calculate_genotype_distance(
+                    self.population[i].genotype,
+                    self.population[j].genotype
+                )
+                distances[(i, j)] = d
+                distances[(j, i)] = d
+
+        for i in range(n):
+            raw = self._raw_fitness(self.population[i])
             
+            # Niche count = sum of sharing function values with all others (+ 1 for self)
+            niche_count = 1.0  # self
+            for j in range(n):
+                if i == j:
+                    continue
+                niche_count += self._sharing_function(distances.get((i, j), 1.0))
+
+            self.population[i].shared_fitness = raw / niche_count
+
+    # ------------------------------------------------------------------ #
+    #  Main loop
+    # ------------------------------------------------------------------ #
+
     def run_evolution_loop(self):
         """
         Runs the full evolution process.
@@ -65,20 +140,25 @@ class EvolutionEngine:
             # 1. Simulate & Evaluate
             self._evaluate_population()
             
-            # 2. Log & Save Stats
+            # 2. Apply niching / fitness sharing
+            self._apply_fitness_sharing()
+            
+            # 3. Log & Save Stats
             self.store.save_generation(gen, [ind.genotype for ind in self.population])
+            self._print_generation_summary()
             
             # Check stopping condition
             if gen == self.generations - 1:
                 break
                 
-            # 3. Selection & Reproduction
+            # 4. Selection & Reproduction
             next_generation = self._produce_next_generation()
             self.population = next_generation
 
     def _evaluate_population(self):
         """
         Runs simulation episodes and assigns fitness scores.
+        Also computes and prints population-level diversity.
         """
         # Batch agents into groups for simulation (e.g. groups of 4)
         group_size = 4
@@ -86,6 +166,9 @@ class EvolutionEngine:
         # Shuffle for randomness
         indices = list(range(len(self.population)))
         random.shuffle(indices)
+        
+        # Collect all posts per agent for population diversity later
+        all_agent_posts: Dict[str, List[str]] = {}
         
         for i in range(0, len(indices), group_size):
             group_indices = indices[i : i+group_size]
@@ -105,45 +188,70 @@ class EvolutionEngine:
                 media_items = self.media_dataset.get_all_media_items()
                 selected_media = random.choice(media_items)
                 media_transcript = env.run_media_episode(selected_media, rounds=1)
-                # Combine transcripts
                 transcript.extend(media_transcript)
             
-            # Evaluate each individual based on the transcript
-            for ind, transcript_data in zip(group_individuals, [transcript]*len(group_individuals)):
-                 # Note: in a real implementation we might segment transcript per agent view 
-                 # or pass the whole transcript. Passing whole for context.
-                 scores = self.evaluator.evaluate(ind.genotype, transcript_data)
-                 ind.scores = scores
-                 
-                 # Print a quick summary
-                 print(f"Agent {ind.genotype.name}: Engagement={scores.engagement:.2f}, Coherence={scores.conversation_quality:.2f}, Diversity={scores.diversity:.2f}")
+            # Evaluate each individual and collect posts
+            for ind in group_individuals:
+                scores = self.evaluator.evaluate(ind.genotype, transcript)
+                ind.scores = scores
+                
+                # Collect posts for population-level diversity
+                my_posts = [
+                    e.get('content', '')
+                    for e in transcript
+                    if e.get('author') == ind.genotype.name
+                ]
+                all_agent_posts[ind.genotype.name] = my_posts
+        
+        # Compute population-level diversity
+        pop_diversity = DiversityEvaluator.calculate_population_diversity(all_agent_posts)
+        print(f"  Population diversity: {pop_diversity:.3f}")
+
+    def _print_generation_summary(self):
+        """Print per-agent summary after fitness sharing."""
+        for ind in self.population:
+            s = ind.scores
+            print(
+                f"  {ind.genotype.name}: "
+                f"Eng={s.engagement:.2f} Qual={s.conversation_quality:.2f} "
+                f"Div={s.diversity:.2f} Fid={s.persona_fidelity:.2f} | "
+                f"Raw={self._raw_fitness(ind):.3f} Shared={ind.shared_fitness:.3f}"
+            )
 
     def _produce_next_generation(self) -> List[Individual]:
         """
         Selects parents and creates offspring.
+        Uses shared_fitness (diversity-adjusted) for selection.
         """
-        # Sort by a weighted fitness score (simple sum for now)
+        # Sort by shared fitness (niching-adjusted)
         sorted_pop = sorted(
             self.population, 
-            key=lambda ind: ind.scores.engagement + ind.scores.conversation_quality, 
+            key=lambda ind: ind.shared_fitness, 
             reverse=True
         )
         
-        # Elitism
-        next_gen = sorted_pop[:self.elite_count]
+        # Elitism — keep top individuals by shared fitness
+        next_gen = [
+            Individual(genotype=ind.genotype, phenotype=ind.phenotype)
+            for ind in sorted_pop[:self.elite_count]
+        ]
         
-        # Fill the rest
+        # Fill the rest via tournament selection on shared_fitness
         while len(next_gen) < self.population_size:
-            # Tournament Selection (size 3)
-            parents = random.sample(sorted_pop, 2) # Should be tournament logic, simplifying to random selection from top half for brevity
-            # Actually let's do a simple tournament
-            p1 = max(random.sample(self.population, 3), key=lambda i: i.scores.engagement).genotype
-            p2 = max(random.sample(self.population, 3), key=lambda i: i.scores.engagement).genotype
+            # Tournament selection (size 3), using shared_fitness
+            p1 = max(
+                random.sample(self.population, min(3, len(self.population))),
+                key=lambda i: i.shared_fitness
+            ).genotype
+            p2 = max(
+                random.sample(self.population, min(3, len(self.population))),
+                key=lambda i: i.shared_fitness
+            ).genotype
             
             # Crossover
             child_genotype = self.crossover_op.crossover(p1, p2)
             
-            # Mutation (small chance)
+            # Mutation (20% chance)
             if random.random() < 0.2:
                 child_genotype = self.mutation_op.mutate(child_genotype)
                 

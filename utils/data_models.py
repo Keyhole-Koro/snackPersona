@@ -82,6 +82,7 @@ class Individual(BaseModel):
     genotype: PersonaGenotype
     phenotype: PersonaPhenotype
     scores: FitnessScores = Field(default_factory=FitnessScores)
+    shared_fitness: float = 0.0  # Adjusted fitness after niching
 
 
 # ==============================================================================
