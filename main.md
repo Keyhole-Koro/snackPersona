@@ -21,6 +21,9 @@ python3 snackPersona/main.py --generations 3 --pop_size 6 --llm bedrock
 
 # Specify output directory
 python3 snackPersona/main.py --store_dir my_experiment_01
+
+# Using media dataset for reaction-based simulation
+python3 snackPersona/main.py --generations 3 --pop_size 6 --llm mock --media_dataset sample_media_dataset.json
 ```
 
 ## CLI Options
@@ -31,6 +34,7 @@ python3 snackPersona/main.py --store_dir my_experiment_01
 | `--pop_size` | `int` | `4` | Population size (number of personas) |
 | `--llm` | `str` | `mock` | LLM backend (`mock`, `openai`, `bedrock`) |
 | `--store_dir` | `str` | `persona_data` | Directory for storing generation data |
+| `--media_dataset` | `str` | `None` | Path to JSON file containing media items for reaction-based simulation |
 
 ## Initialization Flow
 
