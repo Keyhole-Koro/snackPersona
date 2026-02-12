@@ -1,0 +1,18 @@
+{
+    "fitness_weights": {
+        "engagement": 0.35,
+        "conversation_quality": 0.35,
+        "diversity": 0.20,
+        "persona_fidelity": 0.10
+    },
+    "niching": {
+        "sigma": 0.5,
+        "alpha": 1.0
+    },
+    "simulation": {
+        "group_size": 4,
+        "reply_rounds": 3,
+        "mutation_rate": 0.2
+    },
+    "embedding_model": "all-MiniLM-L6-v2"
+}

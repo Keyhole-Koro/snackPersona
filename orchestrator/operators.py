@@ -1,14 +1,21 @@
+"""
+Genetic operators for free-form persona descriptions.
+
+Mutation and crossover operate on the description text using the LLM.
+"""
 from abc import ABC, abstractmethod
-from typing import List, Tuple
 import random
 import json
 from snackPersona.utils.data_models import PersonaGenotype
 from snackPersona.llm.llm_client import LLMClient
+from snackPersona.utils.logger import logger
+
 
 class MutationOperator(ABC):
     @abstractmethod
     def mutate(self, genotype: PersonaGenotype) -> PersonaGenotype:
         pass
+
 
 class SimpleFieldMutator(MutationOperator):
     """
@@ -80,17 +87,23 @@ class LLMMutator(MutationOperator):
         response = self.llm_client.generate_text("You are a genetic algorithm mutation operator that creates interesting persona variations.", user_prompt)
         
         try:
-             # Clean markdown
             if "```json" in response:
                 response = response.split("```json")[1].split("```")[0]
             elif "```" in response:
                 response = response.split("```")[1].split("```")[0]
-                
             data = json.loads(response.strip())
-            return PersonaGenotype(**data)
+            
+            # Helper to construct from dict even if attributes are missing in response (robustness)
+            name = data.get("name", genotype.name)
+            attributes = data.get("attributes", genotype.attributes)
+            
+            return PersonaGenotype(
+                name=name,
+                attributes=attributes
+            )
         except Exception:
-            # Fallback to simple mutator if LLM fails
-            return SimpleFieldMutator().mutate(genotype)
+            logger.warning(f"LLMMutator failed for {genotype.name}, returning original")
+            return genotype
 
 
 class CrossoverOperator(ABC):
@@ -98,11 +111,15 @@ class CrossoverOperator(ABC):
     def crossover(self, parent_a: PersonaGenotype, parent_b: PersonaGenotype) -> PersonaGenotype:
         pass
 
-class MixTraitsCrossover(CrossoverOperator):
+
+class LLMCrossover(CrossoverOperator):
     """
     Simple crossover that mixes fields from two parents.
     Works with the flexible attributes structure.
     """
+    def __init__(self, llm_client: LLMClient):
+        self.llm_client = llm_client
+
     def crossover(self, parent_a: PersonaGenotype, parent_b: PersonaGenotype) -> PersonaGenotype:
         # 50/50 chance for name
         name = parent_a.name if random.random() > 0.5 else parent_b.name

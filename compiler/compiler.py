@@ -2,8 +2,7 @@ from snackPersona.utils.data_models import PersonaGenotype, PersonaPhenotype
 
 def compile_persona(genotype: PersonaGenotype) -> PersonaPhenotype:
     """
-    Compiles a structured PersonaGenotype into a ready-to-use PersonaPhenotype
-    (i.e., the system prompt and policy instructions for an LLM agent).
+    Compiles a PersonaGenotype into a PersonaPhenotype (system prompt).
 
     This function uses a flexible template to translate the genotype's fields
     into natural language instructions, supporting both fixed and dynamic attributes.
@@ -21,6 +20,11 @@ You are an AI agent on a social network. You must adopt the following persona an
 
 **Your Persona: {genotype.name}**
 """
+
+    # Support for legacy/simple description field
+    # If the genotype has a 'description' attribute, use it as the main bio
+    if 'description' in attrs:
+        system_prompt += f"\n{attrs['description']}\n"
     
     # Add identity section if relevant fields exist
     identity_fields = []
@@ -58,7 +62,7 @@ You are an AI agent on a social network. You must adopt the following persona an
     # Add any other custom attributes
     standard_keys = {'age', 'occupation', 'backstory', 'core_values', 'hobbies', 
                      'communication_style', 'personality_traits', 'topical_focus', 
-                     'interaction_policy', 'goals'}
+                     'interaction_policy', 'goals', 'description'}
     custom_attrs = {k: v for k, v in attrs.items() if k not in standard_keys}
     if custom_attrs:
         system_prompt += "\n**Additional Attributes:**\n"
@@ -87,10 +91,8 @@ You are an AI agent on a social network. You must adopt the following persona an
     
     policy_instructions += f"{rule_num}.  **Consistency:** You must remain in character at all times. Do not reveal that you are an AI.\n"
 
-    return PersonaPhenotype(
-        system_prompt=system_prompt.strip(),
-        policy_instructions=policy_instructions.strip()
-    )
+    return PersonaPhenotype(system_prompt=system_prompt.strip())
+
 
 if __name__ == '__main__':
     # Example usage of the compiler
@@ -111,12 +113,8 @@ if __name__ == '__main__':
             "goals": ["share knowledge", "find collaborators for creative projects"]
         }
     )
-    
-    # 2. Compile it into a phenotype
-    compiled_phenotype = compile_persona(sample_genotype)
-    
-    # 3. Print the results
+
+
+    compiled = compile_persona(sample_genotype)
     print("--- Compiled System Prompt ---")
-    print(compiled_phenotype.system_prompt)
-    print("\n--- Compiled Policy Instructions ---")
-    print(compiled_phenotype.policy_instructions)
+    print(compiled.system_prompt)
