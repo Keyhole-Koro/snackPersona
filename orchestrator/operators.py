@@ -143,6 +143,7 @@ class LLMMutator(MutationOperator):
     def mutate(self, genotype: PersonaGenotype) -> PersonaGenotype:
         user_prompt = f"""
         Mutate the following persona genotype to create a slightly different variation.
+        You MUST give the persona a completely new, unique first name.
         Maintain the core identity but change one or two aspects (e.g. valid hobbies, or a slight shift in values).
         
         Original JSON:
@@ -177,8 +178,11 @@ class MixTraitsCrossover(CrossoverOperator):
     Simple crossover that mixes fields from two parents.
     """
     def crossover(self, parent_a: PersonaGenotype, parent_b: PersonaGenotype) -> PersonaGenotype:
-        # 50/50 chance for each major field block
-        name = parent_a.name if random.random() > 0.5 else parent_b.name
+        pools = _load_pools()
+        names = pools.get('names', [])
+
+        # Assign a fresh random name from the pool
+        name = random.choice(names) if names else f"Child-{random.randint(100,999)}"
         age = parent_a.age if random.random() > 0.5 else parent_b.age
         
         # Mix lists

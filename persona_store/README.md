@@ -4,19 +4,21 @@
 
 ## Overview
 
-The Persona Store saves and loads each generation's persona population as JSON files on disk. This enables pausing and resuming evolution runs, as well as analyzing past generations.
+The Persona Store saves and loads each generation's persona population and conversation transcripts as JSON files on disk. This enables pausing and resuming evolution runs, as well as analyzing past generations and their conversations.
 
 ## File Structure
 
 ```
-persona_data/           ← store_dir
-├── gen_0.json          ← Generation 0 population
-├── gen_1.json          ← Generation 1 population
-├── gen_2.json          ← Generation 2 population
-└── ...
+persona_data/                      ← store_dir
+├── gen_0.json                     ← Generation 0 population
+├── gen_1.json                     ← Generation 1 population
+├── transcripts_gen_0.json         ← Generation 0 conversation logs
+├── transcripts_gen_1.json         ← Generation 1 conversation logs
+├── generation_stats.jsonl         ← Per-generation fitness statistics
+└── plots/                         ← Visualisation output
+    ├── fitness_curves.png
+    └── ...
 ```
-
-Each file contains a JSON-serialized list of `PersonaGenotype` objects.
 
 ## Data Flow
 
@@ -28,17 +30,18 @@ sequenceDiagram
 
     Note over Store: Creates directory on initialization
     Engine->>Store: save_generation(gen_id=0, population)
-    Store->>Store: PersonaGenotype.model_dump() to dict
     Store->>FS: Write gen_0.json
     
+    Engine->>Store: save_transcripts(gen_id=0, transcripts)
+    Store->>FS: Write transcripts_gen_0.json
+
     Note over Engine: On next run
     Engine->>Store: list_generations()
     Store->>FS: Scan for gen_*.json files
     Store-->>Engine: [0, 1, 2] (available generation IDs)
-    
+
     Engine->>Store: load_generation(gen_id=2)
     Store->>FS: Read gen_2.json
-    Store->>Store: PersonaGenotype(**item) to deserialize
     Store-->>Engine: List[PersonaGenotype]
 ```
 
@@ -50,65 +53,53 @@ Initializes with a storage directory path. Creates the directory if it doesn't e
 
 ### `save_generation(generation_id: int, population: List[PersonaGenotype])`
 
-Serializes the persona population to JSON and saves it.
+Serializes the persona population to JSON and saves it with file locking.
 
 ```python
 store = PersonaStore("persona_data")
 store.save_generation(0, [genotype_alice, genotype_bob])
-# → persona_data/gen_0.json is created
+# → persona_data/gen_0.json
+```
+
+### `save_transcripts(generation_id: int, transcripts: List[List[dict]])`
+
+Saves conversation transcripts for a generation. Each entry is one group episode's full transcript.
+
+```python
+store.save_transcripts(0, [transcript_group_0, transcript_group_1])
+# → persona_data/transcripts_gen_0.json
 ```
 
 ### `load_generation(generation_id: int) -> List[PersonaGenotype]`
 
 Loads the population for the specified generation. Returns an empty list if the file doesn't exist.
 
-```python
-population = store.load_generation(0)
-print(population[0].name)  # "Alice"
-```
-
 ### `list_generations() -> List[int]`
 
 Returns a sorted list of all saved generation IDs.
 
-```python
-print(store.list_generations())  # [0, 1, 2]
-```
-
-## JSON File Example
+## Transcript JSON Example
 
 ```json
 [
-  {
-    "name": "Alice",
-    "age": 25,
-    "occupation": "Digital Artist",
-    "backstory": "Always loved drawing, now exploring generative art.",
-    "core_values": ["creativity", "freedom"],
-    "hobbies": ["sketching", "visiting galleries"],
-    "personality_traits": {"openness": 0.9, "neuroticism": 0.4},
-    "communication_style": "enthusiastic and visual",
-    "topical_focus": "digital art trends",
-    "interaction_policy": "compliment others' work",
-    "goals": ["become famous", "inspire others"]
-  },
-  {
-    "name": "Bob",
-    "age": 35,
-    "occupation": "Software Engineer",
-    ...
-  }
+  [
+    {"type": "post", "author": "PixelForge", "content": "Here's my take on..."},
+    {"type": "reply", "author": "DataNinja", "target_author": "PixelForge", "content": "Interesting! I think..."},
+    {"type": "pass", "author": "EcoSage", "target_author": "PixelForge"}
+  ]
 ]
 ```
 
 ## Design Decisions
 
 - **Why JSON?**: Human-readable, easy to debug, Git-friendly diffs
-- **Why one file per generation?**: A single monolithic file would grow too large. Per-generation files match the natural access pattern
-- **Pydantic integration**: `model_dump()` and `PersonaGenotype(**data)` provide type-safe serialization/deserialization
+- **Why one file per generation?**: Per-generation files match the natural access pattern and keep file sizes manageable
+- **Transcript preservation**: Full conversation logs enable post-hoc analysis of discussion quality and persona behavior
+- **File locking**: `filelock.FileLock` ensures safe concurrent access to generation files
 
 ## Extension Points
 
 - **Database backend**: Swap in SQLite or MongoDB for large-scale data
+- **Transcript search**: Full-text search over conversation history
 - **Metadata**: Store per-generation score statistics alongside the population
 - **Versioning**: Include timestamps in filenames or manage via Git

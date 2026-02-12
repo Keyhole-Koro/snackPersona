@@ -1,15 +1,17 @@
 # LLM Client Gateway
 
-**Source file:** `snackPersona/llm/llm_client.py`
+**Source files:** `snackPersona/llm/llm_client.py`, `snackPersona/llm/gemini_client.py`, `snackPersona/llm/llm_factory.py`
 
 ## Overview
 
 This module is a gateway that abstracts interactions with LLM (Large Language Model) backends. It provides a unified interface so the rest of the application doesn't depend on any specific LLM provider.
 
+All clients support both **synchronous** and **asynchronous** text generation via `generate_text()` and `generate_text_async()`.
+
 ## Why Abstraction Matters
 
 - **Cost management**: Use `MockLLMClient` during development/testing to incur zero API costs
-- **Provider switching**: Migrating from OpenAI to AWS Bedrock requires changing only a single line of code
+- **Provider switching**: Migrating from Gemini to OpenAI requires changing only the `--llm` preset flag
 - **Local model support**: `OpenAIClient` can connect to local models (vLLM, Ollama, LM Studio) by simply changing the `base_url`
 
 ## Class Hierarchy
@@ -19,94 +21,82 @@ classDiagram
     class LLMClient {
         <<Abstract>>
         +generate_text(system_prompt, user_prompt, model_id, temperature) str
+        +generate_text_async(system_prompt, user_prompt, model_id, temperature) str
     }
     class MockLLMClient {
         +generate_text(...) str
+        +generate_text_async(...) str
+    }
+    class GeminiClient {
+        -model_id: str
+        +generate_text(...) str
+        +generate_text_async(...) str
     }
     class OpenAIClient {
         -client: OpenAI
         -default_model: str
-        +__init__(api_key, base_url)
         +generate_text(...) str
+        +generate_text_async(...) str
     }
     class BedrockClient {
         -bedrock_runtime: Boto3Client
         -default_model: str
-        +__init__(region_name)
         +generate_text(...) str
+        +generate_text_async(...) str
     }
 
     LLMClient <|-- MockLLMClient : Testing
+    LLMClient <|-- GeminiClient : Google Gemini
     LLMClient <|-- OpenAIClient : OpenAI-compatible APIs
     LLMClient <|-- BedrockClient : AWS Bedrock
 ```
 
-## Class Details
+## Preset System (`llm_factory.py`)
 
-### `LLMClient` (Abstract Base Class)
+Select a backend via `--llm <preset>`:
 
-Defines the interface that all clients must implement.
-
-```python
-@abstractmethod
-def generate_text(
-    self,
-    system_prompt: str,     # Agent's persona definition
-    user_prompt: str,       # Specific instructions (create post, reply, etc.)
-    model_id: Optional[str] = None,  # Model ID (uses default if omitted)
-    temperature: float = 0.7        # Generation diversity
-) -> str:
-```
-
-### `MockLLMClient`
-
-A dummy client for testing without API calls. Returns different responses based on keywords in the prompt:
-
-| Keyword | Response |
-|---|---|
-| `"post"` | Dummy post-like text |
-| `"reply"` | Dummy reply-like text |
-| `"evaluate"` / `"score"` | JSON-formatted scores |
-| `"mutate"` | Mutated persona JSON |
-| Other | `"Generic Mock LLM Response."` |
-
-### `OpenAIClient`
-
-Uses the OpenAI Chat Completions API. Also compatible with vLLM / Ollama / LM Studio endpoints.
-
-```python
-# Initialization example
-client = OpenAIClient(
-    api_key="sk-...",          # or set OPENAI_API_KEY env var
-    base_url="http://localhost:8080/v1"  # or set OPENAI_BASE_URL env var
-)
-```
-
-**Required environment variables:**
-
-| Variable | Description | Default |
+| Preset | Backend | Model |
 |---|---|---|
-| `OPENAI_API_KEY` | API key | None (required) |
-| `OPENAI_BASE_URL` | Endpoint URL | Official OpenAI endpoint |
+| `mock` | MockLLMClient | — |
+| `gemini-flash` | GeminiClient | `gemini-2.0-flash` |
+| `gemini-3-flash` | GeminiClient | `gemini-3-flash-preview` |
+| `openai-gpt4o` | OpenAIClient | `gpt-4o` |
+| `bedrock-claude` | BedrockClient | `anthropic.claude-3-sonnet-*` |
 
-### `BedrockClient`
+Defined in `config/llm_presets.json`.
 
-Uses the AWS Bedrock Converse API. Requires IAM authentication.
+## MockLLMClient — Keyword-Based Responses
+
+| Keyword(s) | Response |
+|---|---|
+| `"nickname"` + `"occupation"` | Creative nickname from attributes |
+| `"persona"` + `"json"` + `"diverse"` | JSON array of seed personas |
+| `"trending"` + `"topic"` + `"json"` | JSON array of discussion topics |
+| `"would you reply"` + `"yes"/"no"` | Random `"yes"` / `"no"` |
+| `"post"` + `"draft"` | Random post text |
+| `"reply"` | Random reply text |
+| `"evaluate"` / `"score"` / `"rate"` | JSON fitness scores |
+| `"mutate"` | Mutated persona JSON |
+| Other | Generic fallback response |
+
+## GeminiClient
+
+Uses the Google Generative AI SDK (`google-genai`) with built-in rate limiting.
 
 ```python
-# Initialization example
-client = BedrockClient(region_name="us-east-1")
-# Default model: anthropic.claude-3-sonnet-20240229-v1:0
+# Requires GEMINI_API_KEY environment variable
+client = GeminiClient(model_id="gemini-3-flash-preview")
 ```
 
 ## Dependencies
 
 | Package | Required When | Purpose |
 |---|---|---|
+| `google-genai` | Using `GeminiClient` | Gemini API client |
 | `openai` | Using `OpenAIClient` | OpenAI API client |
 | `boto3` | Using `BedrockClient` | AWS SDK |
 
-> **Note**: Both `openai` and `boto3` are lazily imported via `try/except`, so packages for unused backends are not required.
+> **Note**: Backend packages are lazily imported, so packages for unused backends are not required.
 
 ## Adding a New Backend
 
@@ -116,7 +106,9 @@ class MyCustomClient(LLMClient):
         self.endpoint = endpoint
 
     def generate_text(self, system_prompt, user_prompt, model_id=None, temperature=0.7):
-        # Implement your custom API call logic here
         response = my_api_call(self.endpoint, system_prompt, user_prompt)
         return response.text
+
+    async def generate_text_async(self, system_prompt, user_prompt, model_id=None, temperature=0.7):
+        return self.generate_text(system_prompt, user_prompt, model_id, temperature)
 ```

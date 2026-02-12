@@ -6,9 +6,8 @@
 
 The Evaluation module quantifies persona quality from simulation transcripts. Its fitness scores drive the evolutionary algorithm's selection process.
 
-**Two evaluator types:**
-- **BasicEvaluator**: Rule-based heuristic evaluation (fast, free)
-- **LLMEvaluator**: Delegates evaluation to an LLM for higher quality scoring
+**Evaluator:**
+- **LLMEvaluator**: Delegates evaluation to an LLM for high-quality, multi-dimensional scoring. Used for all backends (including mock mode).
 
 **Diversity subpackage** (`evaluation/diversity/`):
 - **embedding.py**: Sentence-embedding cosine-distance diversity (per-agent output diversity + inter-agent population diversity)
@@ -22,11 +21,6 @@ classDiagram
         <<Abstract>>
         +evaluate(genotype, transcript) FitnessScores
     }
-    class BasicEvaluator {
-        +evaluate(genotype, transcript) FitnessScores
-        -_count_posts(transcript, name) int
-        -_avg_length(transcript, name) float
-    }
     class LLMEvaluator {
         -llm_client: LLMClient
         +evaluate(genotype, transcript) FitnessScores
@@ -38,19 +32,19 @@ classDiagram
         +calculate_overall_diversity(reactions) float
     }
 
-    Evaluator <|-- BasicEvaluator : Rule-based
     Evaluator <|-- LLMEvaluator : LLM-based
 ```
 
 ## FitnessScores (Evaluation Metrics)
 
-| Metric | Range | BasicEvaluator | LLMEvaluator |
-|---|---|---|---|
-| `engagement` | 0–1 | Post count × 0.2 | LLM judgment |
-| `conversation_quality` | 0–1 | Avg char length / 100 | LLM judgment |
-| `diversity` | 0–1 | Embedding cosine distance | Embedding cosine distance |
-| `persona_fidelity` | 0–1 | Fixed (0.5) | LLM judgment |
-| `safety` | 0–1 | Fixed (1.0) | LLM judgment |
+| Metric | Range | LLMEvaluator |
+|---|---|---|
+| `engagement` | 0–1 | LLM judgment |
+| `conversation_quality` | 0–1 | LLM judgment |
+| `diversity` | 0–1 | Embedding cosine distance |
+| `persona_fidelity` | 0–1 | LLM judgment |
+| `social_intelligence` | 0–1 | LLM judgment |
+| `safety` | 0–1 | LLM judgment |
 
 ## Diversity Package (`evaluation/diversity/`)
 

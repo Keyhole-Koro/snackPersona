@@ -6,7 +6,7 @@
 
 The Orchestrator is the heart of the evolutionary algorithm:
 
-- **`engine.py`**: `EvolutionEngine` — controls the evolution loop with fitness sharing and structured logging
+- **`engine.py`**: `EvolutionEngine` — controls the async evolution loop with LLM-driven topic generation, nickname generation, fitness sharing, transcript logging, and structured logging
 - **`operators.py`**: Mutation and Crossover genetic operators with value-pool-based mutation
 
 ## EvolutionEngine
@@ -15,20 +15,23 @@ The Orchestrator is the heart of the evolutionary algorithm:
 
 ```mermaid
 graph TD
-    A["initialize_population()"] --> B["run_evolution_loop()"]
+    A["initialize_population()"] --> B["run_evolution_loop_async()"]
 
     B --> C["Generation loop starts"]
-    C --> D["Step 1: _evaluate_population()"]
-    D --> D1["Group agents (group_size per group)"]
-    D1 --> D2["Run SimulationEnvironment"]
-    D2 --> D3["Score with Evaluator"]
+    C --> D["Step 1: _evaluate_population_async()"]
+    D --> D0["_generate_topics_async() via LLM"]
+    D0 --> D1["Group agents (group_size per group)"]
+    D1 --> D1b["Pick random topic for group"]
+    D1b --> D2["Run SimulationEnvironment"]
+    D2 --> D3["Score with LLMEvaluator"]
     D3 --> D4["Calculate population diversity"]
     D4 --> E["Step 2: _apply_fitness_sharing()"]
     E --> E1["Compute pairwise genotype distances"]
     E1 --> E2["Apply niching penalty to shared_fitness"]
     E2 --> F["Step 3: Log & Save"]
     F --> F1["Save generation JSON"]
-    F1 --> F2["Append to generation_stats.jsonl"]
+    F1 --> F1b["Save transcripts JSON"]
+    F1b --> F2["Append to generation_stats.jsonl"]
     F2 --> G{Last generation?}
     G -- No --> H["Step 4: _produce_next_generation()"]
     H --> H1["Elite selection (top N by shared_fitness)"]
@@ -36,13 +39,28 @@ graph TD
     H2 --> H3["Crossover to create child"]
     H3 --> H4{"Mutation probability?"}
     H4 -- Yes --> H5["Apply mutation"]
-    H4 -- No --> H6["Add to next generation"]
+    H4 -- No --> H6["_generate_nickname() via LLM"]
     H5 --> H6
-    H6 --> H7{Population size reached?}
-    H7 -- No --> H2
-    H7 -- Yes --> C
+    H6 --> H7["Add to next generation"]
+    H7 --> H8{Population size reached?}
+    H8 -- No --> H2
+    H8 -- Yes --> C
     G -- Yes --> I["Complete"]
 ```
+
+### LLM-Driven Topic Generation
+
+At the start of each generation, `_generate_topics_async()` asks the LLM to generate 5 diverse, trending discussion topics. Each group episode randomly selects one topic from this pool.
+
+**Fallback:** If LLM generation fails, a static list of 15 topics is used.
+
+### LLM-Driven Nickname Generation
+
+After crossover and mutation, `_generate_nickname()` asks the LLM to create a creative social-media nickname based on the child's attributes (occupation, hobbies, values, style, topical focus).
+
+### Transcript Saving
+
+All group transcripts are saved per generation via `store.save_transcripts()` as `transcripts_gen_N.json`, preserving the full conversation history for analysis.
 
 ### Configuration
 
@@ -77,13 +95,13 @@ Prevents evolution from converging to a single persona type:
 
 ```jsonc
 {
-  "timestamp": "2026-02-11T23:58:51",
-  "generation": 0,
-  "population_size": 6,
-  "population_diversity": 0.260,
-  "fitness_mean": 0.388, "fitness_max": 0.388, "fitness_min": 0.388,
+  "timestamp": "2026-02-12T15:03:32",
+  "generation": 1,
+  "population_size": 8,
+  "population_diversity": 0.514,
+  "fitness_mean": 0.774, "fitness_max": 0.883, "fitness_min": 0.510,
   "agents": [
-    {"name": "Alice", "engagement": 0.80, "raw_fitness": 0.388, "shared_fitness": 0.388}
+    {"name": "PixelForge", "engagement": 0.90, "raw_fitness": 0.790, "shared_fitness": 0.187}
   ]
 }
 ```
@@ -104,18 +122,21 @@ Applies 1–2 random strategies per mutation, using curated value pools from `co
 
 ### LLMMutator
 
-Sends persona JSON to an LLM and asks for a "slightly different variation." Falls back to `SimpleFieldMutator` on parse failure.
+Sends persona JSON to an LLM and asks for a "slightly different variation" with a **new unique name**. Falls back to `SimpleFieldMutator` on parse failure.
 
 ### MixTraitsCrossover
 
-50/50 field selection from two parents:
+Field selection from two parents with a fresh random name from the name pool:
 
 | Field | Source |
 |---|---|
-| `name`, `age` | A or B (50/50 random) |
+| `name` | Random from `mutation_pools.json` names pool |
+| `age` | A or B (50/50 random) |
 | `occupation`, `core_values`, `personality_traits`, `topical_focus` | Always Parent A |
 | `backstory`, `hobbies`, `communication_style`, `interaction_policy` | Always Parent B |
 | `goals` | First half A + second half B |
+
+> **Note:** The crossover name is a temporary placeholder — `_generate_nickname()` replaces it with an LLM-generated nickname based on the child's final attributes.
 
 ## Extension Points
 

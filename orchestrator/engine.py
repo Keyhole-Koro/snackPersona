@@ -1,7 +1,16 @@
-from typing import List, Callable, Optional, Dict
-import random
+"""
+Evolution engine — orchestrates the evolutionary loop:
+
+    PopGen → Simulation → Evaluation → Fitness Sharing → Selection → Reproduction → NextGen
+
+Supports both synchronous and asynchronous execution.
+"""
+
+import asyncio
 import json
-import os
+import random
+from typing import List, Optional, Dict
+
 from snackPersona.utils.data_models import PersonaGenotype, Individual, MediaItem
 from snackPersona.simulation.agent import SimulationAgent
 from snackPersona.simulation.environment import SimulationEnvironment
@@ -13,6 +22,7 @@ from snackPersona.llm.llm_client import LLMClient
 from snackPersona.compiler.compiler import compile_persona
 from snackPersona.utils.media_dataset import MediaDataset
 from snackPersona.utils.logger import logger, EvolutionLogger
+
 
 # Default config — overridden by JSON config if provided
 DEFAULT_CONFIG = {
@@ -33,12 +43,22 @@ DEFAULT_CONFIG = {
     },
 }
 
+# Static fallback topics — used when LLM topic generation fails
+_FALLBACK_TOPICS = [
+    "AI Technology", "Climate Change", "Mental Health",
+    "Space Exploration", "Food Culture", "Music and Art",
+    "Education Reform", "Social Media Impact", "Remote Work",
+    "Gaming Culture", "Science and Innovation", "Philosophy",
+    "Entrepreneurship", "Digital Privacy", "Urban Living",
+]
+
 
 class EvolutionEngine:
     """
     Orchestrates the evolutionary loop:
     PopGen -> Simulation -> Evaluation -> Fitness Sharing -> Selection -> Reproduction -> NextGen
     """
+
     def __init__(
         self,
         llm_client: LLMClient,
@@ -122,7 +142,7 @@ class EvolutionEngine:
             for j in range(i + 1, n):
                 d = DiversityEvaluator.calculate_genotype_distance(
                     self.population[i].genotype,
-                    self.population[j].genotype
+                    self.population[j].genotype,
                 )
                 distances[(i, j)] = d
                 distances[(j, i)] = d
@@ -138,25 +158,26 @@ class EvolutionEngine:
             self.population[i].shared_fitness = raw / niche_count
 
     # ------------------------------------------------------------------ #
-    #  Main loop
+    #  Main loop — async
     # ------------------------------------------------------------------ #
 
-    def run_evolution_loop(self):
-        """Runs the full evolution process."""
+    async def run_evolution_loop_async(self):
+        """Runs the full evolution process asynchronously."""
         for gen in range(self.generations):
             self.current_generation = gen
             logger.info(f"{'=' * 40}")
             logger.info(f"Generation {gen}")
             logger.info(f"{'=' * 40}")
 
-            # 1. Simulate & Evaluate
-            pop_diversity = self._evaluate_population()
+            # 1. Simulate & Evaluate (async)
+            pop_diversity, gen_transcripts = await self._evaluate_population_async()
 
             # 2. Apply niching / fitness sharing
             self._apply_fitness_sharing()
 
             # 3. Log & Save
             self.store.save_generation(gen, [ind.genotype for ind in self.population])
+            self.store.save_transcripts(gen, gen_transcripts)
             self.evo_logger.log_generation(
                 generation=gen,
                 individuals=self.population,
@@ -171,31 +192,89 @@ class EvolutionEngine:
             next_generation = self._produce_next_generation()
             self.population = next_generation
 
-    def _evaluate_population(self) -> float:
-        """Runs simulation episodes and assigns fitness scores. Returns population diversity."""
+    def run_evolution_loop(self):
+        """Synchronous wrapper for run_evolution_loop_async."""
+        asyncio.run(self.run_evolution_loop_async())
+
+    # ------------------------------------------------------------------ #
+    #  Evaluation — async
+    # ------------------------------------------------------------------ #
+
+    async def _generate_topics_async(self, count: int = 5) -> List[str]:
+        """Ask the LLM to generate diverse trending topics for this generation."""
+        system_prompt = "You are a social media trend analyst."
+        user_prompt = (
+            f"Generate exactly {count} diverse, specific trending discussion topics "
+            f"that people might debate on social media right now. "
+            f"Cover different domains (tech, culture, science, politics, lifestyle, etc.). "
+            f"Return ONLY a JSON array of strings, e.g. [\"topic1\", \"topic2\", ...]. "
+            f"No markdown, no explanation."
+        )
+        try:
+            response = await self.llm_client.generate_text_async(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                temperature=0.9,
+            )
+            # Strip markdown fences if present
+            text = response.strip()
+            if text.startswith("```"):
+                text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+            topics = json.loads(text)
+            if isinstance(topics, list) and len(topics) > 0:
+                logger.info(f"Generated topics: {topics}")
+                return [str(t) for t in topics]
+        except Exception as e:
+            logger.warning(f"LLM topic generation failed ({e}), using fallback topics")
+        return list(_FALLBACK_TOPICS)
+
+    async def _evaluate_population_async(self):
+        """Runs simulation episodes and assigns fitness scores.
+
+        Returns
+        -------
+        tuple[float, list]
+            Population diversity score and list of transcripts (one per group).
+        """
         group_size = self.sim_config.get("group_size", 4)
         reply_rounds = self.sim_config.get("reply_rounds", 3)
+
+        # Generate topics for this generation via LLM
+        episode_topics = await self._generate_topics_async()
 
         indices = list(range(len(self.population)))
         random.shuffle(indices)
 
         all_agent_posts: Dict[str, List[str]] = {}
+        all_transcripts: List[List[dict]] = []
 
         for i in range(0, len(indices), group_size):
-            group_indices = indices[i : i + group_size]
+            group_indices = indices[i: i + group_size]
             group_individuals = [self.population[idx] for idx in group_indices]
 
-            sim_agents = [SimulationAgent(ind.genotype, self.llm_client) for ind in group_individuals]
+            sim_agents = [
+                SimulationAgent(ind.genotype, self.llm_client)
+                for ind in group_individuals
+            ]
             env = SimulationEnvironment(sim_agents)
 
-            transcript = env.run_episode(rounds=reply_rounds)
+            topic = random.choice(episode_topics)
+            transcript = await env.run_episode_async(rounds=reply_rounds, topic=topic)
 
             # Optional media episode
             if self.media_dataset and len(self.media_dataset) > 0:
                 media_items = self.media_dataset.get_all_media_items()
                 selected_media = random.choice(media_items)
-                media_transcript = env.run_media_episode(selected_media, rounds=1)
+                media_transcript = await env.run_media_episode_async(
+                    selected_media, rounds=1
+                )
                 transcript.extend(media_transcript)
+
+            # Clear feed between groups (bug fix)
+            env.clear_feed()
+
+            # Save transcript for this group
+            all_transcripts.append(transcript)
 
             # Evaluate
             for ind in group_individuals:
@@ -210,7 +289,11 @@ class EvolutionEngine:
                 all_agent_posts[ind.genotype.name] = my_posts
 
         pop_diversity = DiversityEvaluator.calculate_population_diversity(all_agent_posts)
-        return pop_diversity
+        return pop_diversity, all_transcripts
+
+    # ------------------------------------------------------------------ #
+    #  Reproduction
+    # ------------------------------------------------------------------ #
 
     def _produce_next_generation(self) -> List[Individual]:
         """Selects parents and creates offspring using shared_fitness."""
@@ -219,7 +302,7 @@ class EvolutionEngine:
         sorted_pop = sorted(
             self.population,
             key=lambda ind: ind.shared_fitness,
-            reverse=True
+            reverse=True,
         )
 
         # Elitism
@@ -232,11 +315,11 @@ class EvolutionEngine:
         while len(next_gen) < self.population_size:
             p1 = max(
                 random.sample(self.population, min(3, len(self.population))),
-                key=lambda i: i.shared_fitness
+                key=lambda i: i.shared_fitness,
             ).genotype
             p2 = max(
                 random.sample(self.population, min(3, len(self.population))),
-                key=lambda i: i.shared_fitness
+                key=lambda i: i.shared_fitness,
             ).genotype
 
             child_genotype = self.crossover_op.crossover(p1, p2)
@@ -244,7 +327,37 @@ class EvolutionEngine:
             if random.random() < mutation_rate:
                 child_genotype = self.mutation_op.mutate(child_genotype)
 
-            next_gen.append(Individual(genotype=child_genotype, phenotype=compile_persona(child_genotype)))
+            # Generate a nickname based on the child's attributes
+            child_genotype = self._generate_nickname(child_genotype)
+
+            next_gen.append(
+                Individual(genotype=child_genotype, phenotype=compile_persona(child_genotype))
+            )
 
         logger.info(f"Next generation: {len(next_gen)} individuals produced")
         return next_gen
+
+    def _generate_nickname(self, genotype: PersonaGenotype) -> PersonaGenotype:
+        """Ask the LLM to create a creative nickname based on persona attributes."""
+        user_prompt = (
+            f"Create a short, creative social-media nickname (one word, no spaces, "
+            f"no special characters) for a persona with these attributes:\n"
+            f"- Occupation: {genotype.occupation}\n"
+            f"- Hobbies: {', '.join(genotype.hobbies)}\n"
+            f"- Values: {', '.join(genotype.core_values)}\n"
+            f"- Style: {genotype.communication_style}\n"
+            f"- Focus: {genotype.topical_focus}\n"
+            f"Reply with ONLY the nickname, nothing else."
+        )
+        try:
+            response = self.llm_client.generate_text(
+                system_prompt="You are a creative username generator.",
+                user_prompt=user_prompt,
+            )
+            nickname = response.strip().split()[0]  # Take first word only
+            if nickname and len(nickname) <= 20:
+                genotype = genotype.model_copy(deep=True)
+                genotype.name = nickname
+        except Exception as e:
+            logger.debug(f"Nickname generation failed: {e}")
+        return genotype

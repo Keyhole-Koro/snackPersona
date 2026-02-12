@@ -1,0 +1,51 @@
+{
+    "mock": {
+        "backend": "mock",
+        "description": "Mock LLM for local testing (no API key needed)"
+    },
+    "gemini-flash": {
+        "backend": "gemini",
+        "model": "gemini-2.0-flash",
+        "description": "Google Gemini 2.0 Flash — fast and cost-effective",
+        "rate_limit": {
+            "requests_per_minute": 15,
+            "tokens_per_minute": 1000000
+        }
+    },
+    "gemini-3-flash": {
+        "backend": "gemini",
+        "model": "gemini-3-flash-preview",
+        "description": "Google Gemini 3 flash preview",
+        "rate_limit": {
+            "requests_per_minute": 15,
+            "tokens_per_minute": 1000000
+        }
+    },
+    "openai-gpt4o": {
+        "backend": "openai",
+        "model": "gpt-4o",
+        "description": "OpenAI GPT-4o",
+        "rate_limit": {
+            "requests_per_minute": 60,
+            "tokens_per_minute": 150000
+        }
+    },
+    "openai-gpt4o-mini": {
+        "backend": "openai",
+        "model": "gpt-4o-mini",
+        "description": "OpenAI GPT-4o Mini — faster and cheaper",
+        "rate_limit": {
+            "requests_per_minute": 100,
+            "tokens_per_minute": 200000
+        }
+    },
+    "bedrock-claude": {
+        "backend": "bedrock",
+        "model": "anthropic.claude-3-sonnet-20240229-v1:0",
+        "description": "AWS Bedrock — Claude 3 Sonnet",
+        "rate_limit": {
+            "requests_per_minute": 30,
+            "tokens_per_minute": 100000
+        }
+    }
+}

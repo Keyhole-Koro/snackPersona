@@ -13,35 +13,6 @@ class Evaluator(ABC):
     def evaluate(self, genotype: PersonaGenotype, transcript: List[Dict]) -> FitnessScores:
         pass
 
-class BasicEvaluator(Evaluator):
-    """
-    A simple evaluator using heuristics.
-    """
-    def evaluate(self, genotype: PersonaGenotype, transcript: List[Dict]) -> FitnessScores:
-        # Heuristic 1: Engagement = did they speak?
-        my_posts = [e for e in transcript if e.get('author') == genotype.name]
-        engagement = min(len(my_posts) * 0.2, 1.0) # Cap at 5 posts for max score
-        
-        # Heuristic 2: Coherence (dummy) = length check
-        avg_len = 0
-        if my_posts:
-            avg_len = sum(len(p.get('content', '')) for p in my_posts) / len(my_posts)
-        coherence = min(avg_len / 100.0, 1.0)
-        
-        # Heuristic 3: Diversity - evaluate diversity of this persona's contributions
-        diversity = 0.0
-        if len(my_posts) >= 2:
-            diversity = DiversityEvaluator.calculate_overall_diversity(my_posts)
-        
-        return FitnessScores(
-            conversation_quality=coherence,
-            engagement=engagement,
-            persona_fidelity=0.5, # Placeholder
-            social_intelligence=0.5,
-            safety=1.0,
-            diversity=diversity
-        )
-
 class LLMEvaluator(Evaluator):
     """
     Evaluator that uses an LLM to score transcripts.
