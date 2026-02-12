@@ -1,13 +1,13 @@
 # Evolution Orchestrator — Engine & Genetic Operators
 
-**Source files:** `snackPersona/orchestrator/engine.py`, `snackPersona/orchestrator/operators.py`
+**Source files:** `orchestrator/engine.py`, `orchestrator/operators.py`
 
 ## Overview
 
-The Orchestrator is the heart of the evolutionary algorithm. It consists of two files:
+The Orchestrator is the heart of the evolutionary algorithm:
 
-- **`engine.py`**: `EvolutionEngine` — controls the entire evolutionary loop
-- **`operators.py`**: Mutation and Crossover genetic operators
+- **`engine.py`**: `EvolutionEngine` — controls the evolution loop with fitness sharing and structured logging
+- **`operators.py`**: Mutation and Crossover genetic operators with value-pool-based mutation
 
 ## EvolutionEngine
 
@@ -16,216 +16,110 @@ The Orchestrator is the heart of the evolutionary algorithm. It consists of two 
 ```mermaid
 graph TD
     A["initialize_population()"] --> B["run_evolution_loop()"]
-    
+
     B --> C["Generation loop starts"]
     C --> D["Step 1: _evaluate_population()"]
-    D --> D1["Group agents (4 per group)"]
-    D1 --> D2["Run SimulationEnvironment for conversation"]
+    D --> D1["Group agents (group_size per group)"]
+    D1 --> D2["Run SimulationEnvironment"]
     D2 --> D3["Score with Evaluator"]
-    D3 --> E["Step 2: save_generation()"]
-    E --> F{"Last generation?"}
-    F -- No --> G["Step 3: _produce_next_generation()"]
-    G --> G1["Sort by fitness"]
-    G1 --> G2["Elite selection (keep top N)"]
-    G2 --> G3["Tournament selection: pick 2 parents"]
-    G3 --> G4["Crossover to create child"]
-    G4 --> G5{"Mutation probability 20%?"}
-    G5 -- Yes --> G6["Apply mutation"]
-    G5 -- No --> G7["Add to next generation"]
-    G6 --> G7
-    G7 --> G8{"Population size reached?"}
-    G8 -- No --> G3
-    G8 -- Yes --> C
-    F -- Yes --> H["Complete"]
+    D3 --> D4["Calculate population diversity"]
+    D4 --> E["Step 2: _apply_fitness_sharing()"]
+    E --> E1["Compute pairwise genotype distances"]
+    E1 --> E2["Apply niching penalty to shared_fitness"]
+    E2 --> F["Step 3: Log & Save"]
+    F --> F1["Save generation JSON"]
+    F1 --> F2["Append to generation_stats.jsonl"]
+    F2 --> G{Last generation?}
+    G -- No --> H["Step 4: _produce_next_generation()"]
+    H --> H1["Elite selection (top N by shared_fitness)"]
+    H1 --> H2["Tournament selection: pick 2 parents"]
+    H2 --> H3["Crossover to create child"]
+    H3 --> H4{"Mutation probability?"}
+    H4 -- Yes --> H5["Apply mutation"]
+    H4 -- No --> H6["Add to next generation"]
+    H5 --> H6
+    H6 --> H7{Population size reached?}
+    H7 -- No --> H2
+    H7 -- Yes --> C
+    G -- Yes --> I["Complete"]
 ```
 
-### Constructor Parameters
+### Configuration
 
-```python
-engine = EvolutionEngine(
-    llm_client=mock_client,        # LLM backend
-    store=persona_store,           # Generation data storage
-    evaluator=basic_evaluator,     # Evaluation engine
-    mutation_op=simple_mutator,    # Mutation operator
-    crossover_op=mix_crossover,    # Crossover operator
-    population_size=10,            # Population size
-    generations=5,                 # Number of generations
-    elite_count=2                  # Number of elites to preserve
-)
+All parameters are configurable via JSON (`--config` flag):
+
+```json
+{
+  "fitness_weights": {
+    "engagement": 0.35,
+    "conversation_quality": 0.35,
+    "diversity": 0.20,
+    "persona_fidelity": 0.10
+  },
+  "niching": { "sigma": 0.5, "alpha": 1.0 },
+  "simulation": { "group_size": 4, "reply_rounds": 3, "mutation_rate": 0.2 }
+}
 ```
 
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `population_size` | `int` | `10` | Number of personas per generation |
-| `generations` | `int` | `5` | Number of generations to evolve |
-| `elite_count` | `int` | `2` | Top individuals carried over unchanged |
+### Fitness Sharing (Niching)
 
-### Population Initialization Logic
+Prevents evolution from converging to a single persona type:
 
-```mermaid
-graph LR
-    Seeds["Seed Genotypes"] --> Check{"Seeds >= pop_size?"}
-    Check -- Yes --> Pop["Use as population"]
-    Check -- No --> Mutate["Fill remaining slots via mutation of seeds"]
-    Mutate --> Pop
-    Pop --> Compile["compile_persona() for each Genotype"]
-    Compile --> Individuals["List[Individual]"]
-```
+1. Compute pairwise genotype distances between all individuals
+2. For each individual, calculate niche count: `Σ sh(d(i,j))` where `sh(d) = 1 - (d/σ)^α` if `d < σ`, else 0
+3. Shared fitness = raw fitness ÷ niche count
 
-### Selection Strategy
+**Effect:** Similar individuals share fitness, reducing their selection pressure. Unique individuals retain full fitness.
 
-Currently uses **Tournament Selection (size 3)**:
+### Structured Logging
 
-1. Randomly sample 3 individuals from the population
-2. Pick the one with the highest `engagement` score as a parent
-3. Repeat to select a second parent (p1, p2)
+`EvolutionLogger` writes to both console and `{store_dir}/generation_stats.jsonl`:
 
-**Fitness weighting:**
-```python
-# Currently uses a simple sum of engagement + conversation_quality for sorting
-key = ind.scores.engagement + ind.scores.conversation_quality
+```jsonc
+{
+  "timestamp": "2026-02-11T23:58:51",
+  "generation": 0,
+  "population_size": 6,
+  "population_diversity": 0.260,
+  "fitness_mean": 0.388, "fitness_max": 0.388, "fitness_min": 0.388,
+  "agents": [
+    {"name": "Alice", "engagement": 0.80, "raw_fitness": 0.388, "shared_fitness": 0.388}
+  ]
+}
 ```
 
 ## Genetic Operators
 
-### Class Hierarchy
+### SimpleFieldMutator (Pool-Based Mutation)
 
-```mermaid
-classDiagram
-    class MutationOperator {
-        <<Abstract>>
-        +mutate(genotype) PersonaGenotype
-    }
-    class SimpleFieldMutator {
-        +mutate(genotype) PersonaGenotype
-    }
-    class LLMMutator {
-        -llm_client: LLMClient
-        +mutate(genotype) PersonaGenotype
-    }
+Applies 1–2 random strategies per mutation, using curated value pools from `config/mutation_pools.json`:
 
-    class CrossoverOperator {
-        <<Abstract>>
-        +crossover(parent_a, parent_b) PersonaGenotype
-    }
-    class MixTraitsCrossover {
-        +crossover(parent_a, parent_b) PersonaGenotype
-    }
-
-    MutationOperator <|-- SimpleFieldMutator : Random perturbation
-    MutationOperator <|-- LLMMutator : Semantically meaningful
-    CrossoverOperator <|-- MixTraitsCrossover : Trait mixing
-```
-
-### SimpleFieldMutator (Simple Mutation)
-
-Randomly selects one field and applies a small change:
-
-| Mutation Type | Probability | Operation |
+| Strategy | Fields | How |
 |---|---|---|
-| `name` | 33% | Appends `" II"` to the name |
-| `age` | 33% | Changes age by ±1 |
-| `backstory` | 33% | Appends `"[Recently changed perspective.]"` to backstory |
+| `trait_perturb` | `personality_traits` | ±0.15 random delta, clamped [0, 1] |
+| `list_swap` | `hobbies`, `core_values`, `goals` | Remove random item + add from pool |
+| `style_replace` | `communication_style`, `topical_focus` | Replace with random pool value |
+| `age_shift` | `age` | ±1..5, clamped [18, 80] |
+| `backstory_event` | `backstory` | Append random life event from pool |
 
-```python
-mutated = SimpleFieldMutator().mutate(alice_genotype)
-# alice_genotype.name = "Alice" → mutated.name = "Alice II"
-```
+### LLMMutator
 
-### LLMMutator (LLM-Based Mutation)
+Sends persona JSON to an LLM and asks for a "slightly different variation." Falls back to `SimpleFieldMutator` on parse failure.
 
-Sends the original persona JSON to an LLM and asks it to generate a "slightly different variation."
+### MixTraitsCrossover
 
-```mermaid
-sequenceDiagram
-    participant Engine
-    participant LMut as LLMMutator
-    participant LLM as LLMClient
+50/50 field selection from two parents:
 
-    Engine->>LMut: mutate(genotype)
-    LMut->>LLM: "Mutate this persona... maintain core identity"
-    LLM-->>LMut: Mutated JSON
-    LMut->>LMut: Parse JSON → PersonaGenotype
-    LMut-->>Engine: Mutated persona
-
-    alt JSON parse failure
-        LMut->>LMut: Fall back to SimpleFieldMutator
-        LMut-->>Engine: Simple mutation result
-    end
-```
-
-**Advantage:** Produces "meaningful" mutations — e.g., changing hobbies or slightly adjusting values, rather than just appending strings.
-
-### MixTraitsCrossover (Trait-Mixing Crossover)
-
-Selects field values from two parents, each with a 50% probability:
-
-```mermaid
-graph LR
-    subgraph ParentA["Parent A: Alice"]
-        A_name["name: Alice"]
-        A_occ["occupation: Artist"]
-        A_val["core_values: creativity"]
-        A_style["communication: enthusiastic"]
-    end
-
-    subgraph ParentB["Parent B: Bob"]
-        B_name["name: Bob"]
-        B_occ["occupation: Engineer"]
-        B_val["core_values: logic"]
-        B_style["communication: concise"]
-    end
-
-    subgraph Child["Child: Mixed"]
-        C_name["name: Alice (50%)"]
-        C_occ["occupation: Artist (from A)"]
-        C_val["core_values: creativity (from A)"]
-        C_style["communication: concise (from B)"]
-    end
-
-    ParentA --> Child
-    ParentB --> Child
-```
-
-**Field assignment rules:**
-
-| Field | Source | Selection |
-|---|---|---|
-| `name` | A or B | 50/50 random |
-| `age` | A or B | 50/50 random |
-| `occupation` | Always A | — |
-| `backstory` | Always B | — |
-| `core_values` | Always A | — |
-| `hobbies` | Always B | — |
-| `personality_traits` | Always A | — |
-| `communication_style` | Always B | — |
-| `topical_focus` | Always A | — |
-| `interaction_policy` | Always B | — |
-| `goals` | First half of A + second half of B | List merge |
-
-## Evolution Walkthrough (Example: 3 generations, 4 personas)
-
-```
-Generation 0: [Alice, Bob, Charlie, Dana]
-  ↓ Simulation & Evaluation
-  ↓ Alice=0.9, Dana=0.7, Bob=0.5, Charlie=0.3
-  ↓ Elites: Alice, Dana preserved
-  ↓ Crossover: Alice×Dana → Child1, Bob×Alice → Child2
-  ↓ Mutation: Child2 mutated with 20% probability
-
-Generation 1: [Alice, Dana, Child1, Child2(mutated)]
-  ↓ Simulation & Evaluation
-  ↓ Child1=0.95, Alice=0.85, Child2=0.6, Dana=0.55
-  ↓ Elites: Child1, Alice preserved
-  ...
-
-Generation 2: [Child1, Alice, Grandchild1, Grandchild2]
-  ↓ Saved as final generation
-```
+| Field | Source |
+|---|---|
+| `name`, `age` | A or B (50/50 random) |
+| `occupation`, `core_values`, `personality_traits`, `topical_focus` | Always Parent A |
+| `backstory`, `hobbies`, `communication_style`, `interaction_policy` | Always Parent B |
+| `goals` | First half A + second half B |
 
 ## Extension Points
 
-- **Multi-objective selection**: Replace simple sum with Pareto-optimal selection (e.g., NSGA-II)
-- **Adaptive mutation rate**: Decrease mutation rate as generations progress
-- **LLM crossover**: Use an LLM for semantically meaningful crossover (like `LLMMutator`)
-- **Island model**: Evolve multiple populations in parallel and periodically exchange individuals
+- **Multi-objective selection**: Pareto-optimal selection (e.g., NSGA-II) instead of weighted sum
+- **Adaptive mutation rate**: Decrease as generations progress
+- **LLM crossover**: Semantically meaningful crossover via LLM
+- **Island model**: Evolve multiple populations in parallel with periodic migration

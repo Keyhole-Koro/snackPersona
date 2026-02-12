@@ -1,12 +1,12 @@
 # Simulation — SNS Agent Simulation
 
-**Source files:** `snackPersona/simulation/agent.py`, `snackPersona/simulation/environment.py`
+**Source files:** `simulation/agent.py`, `simulation/environment.py`
 
 ## Overview
 
-The Simulation module simulates how AI personas behave on a social network. Each persona is wrapped as a `SimulationAgent`, and a `SimulationEnvironment` manages the shared feed (timeline) where agents post and reply.
+The Simulation module simulates how AI personas behave on a social network. Each persona is wrapped as a `SimulationAgent`, and a `SimulationEnvironment` manages the shared feed where agents post, decide whether to engage, and reply.
 
-The output of this module (Transcript = conversation log) is passed to the evaluation engine for persona quality scoring.
+The output (Transcript) is passed to the evaluation engine for fitness scoring.
 
 ## Architecture
 
@@ -22,36 +22,37 @@ graph TB
         PA["Phenotype"]
         MA["Memory"]
         PostA["generate_post()"]
+        EngageA["should_engage()"]
         ReplyA["generate_reply()"]
-    end
-
-    subgraph AgentB["SimulationAgent: Bob"]
-        GB["Genotype"]
-        PB["Phenotype"]
-        MB["Memory"]
     end
 
     RunEp --> PostA
     PostA --> Feed
-    RunEp --> ReplyA
+    Feed --> EngageA
+    EngageA -->|yes| ReplyA
     ReplyA --> Feed
 
     GA -->|compile_persona| PA
     PA -->|system_prompt| PostA
 ```
 
-## SimulationAgent Details
+## SimulationAgent
 
-### Initialization
+### Key Methods
 
-```python
-agent = SimulationAgent(genotype=alice_genotype, llm_client=mock_client)
-# Internally calls compile_persona(genotype) to produce the Phenotype
-```
+| Method | Purpose |
+|---|---|
+| `generate_post(topic)` | Creates a new SNS post based on persona and topic |
+| `should_engage(post, author)` | **LLM-based decision**: "Would this persona reply?" Returns `True`/`False` |
+| `generate_reply(post, author)` | Generates a reply to another agent's post |
+| `generate_media_reaction(media_item)` | Reacts to an article/media content |
 
-### `generate_post(topic: str) -> str`
+### `should_engage()` — Persona-Driven Engagement
 
-Generates an SNS post based on a topic.
+The agent uses the LLM to decide whether its persona would reply, considering:
+- **Topical interest** (`topical_focus`)
+- **Interaction style** (`interaction_policy`)
+- **Content relevance**
 
 ```mermaid
 sequenceDiagram
@@ -59,106 +60,63 @@ sequenceDiagram
     participant Agent as Agent
     participant LLM as LLMClient
 
-    Env->>Agent: generate_post("AI Technology")
-    Note over Agent: Combines system_prompt + policy_instructions
-    Agent->>LLM: generate_text(full_system, "Draft a post... topic is: AI Technology")
-    LLM-->>Agent: "Latest trends in AI technology..."
-    Agent->>Agent: Record in memory (role: assistant)
-    Agent-->>Env: Post text
+    Env->>Agent: should_engage(post, author)
+    Agent->>LLM: "Would you reply? Consider interests, style..."
+    LLM-->>Agent: "yes" / "no"
+    Agent-->>Env: True / False
 ```
 
-**Prompt structure:**
-```
-[system_prompt]          ← Persona identity
-[policy_instructions]    ← Behavioral rules
----
-[user_prompt]            ← "Draft a new post... The current trending topic is: {topic}"
-```
+All actions are logged via structured logger (`utils/logger.py`).
 
-### `generate_reply(post_content: str, author_name: str) -> str`
+## SimulationEnvironment
 
-Generates a reply to another agent's post.
-
-**Prompt structure:**
-```
-[system_prompt + policy_instructions]
----
-User '{author_name}' posted: "{post_content}"
-Write a reply.
-```
-
-### Memory (Short-Term)
-
-During each episode, agents accumulate their actions in a `memory` list. It is cleared via `reset_memory()` at the end of each episode.
-
-```python
-agent.memory = [
-    {"role": "assistant", "content": "My first post..."},
-    {"role": "user", "content": "Bob: Great post!"},
-    {"role": "assistant", "content": "Thanks Bob!"},
-]
-```
-
-> **Note**: The current implementation does not include memory in the LLM prompt. In the future, feeding it into the context window would enable more consistent conversations.
-
-## SimulationEnvironment Details
-
-### Episode Flow
+### Episode Flow (Persona-Driven)
 
 ```mermaid
 graph TD
-    A["run_episode(rounds=3, topic='AI')"] --> B["Phase 1: Posting"]
-    B --> B1["Randomly select ~half the agents"]
-    B1 --> B2["Selected agents generate posts"]
-    B2 --> B3["Add posts to Feed"]
-    B3 --> C["Phase 2: Replying (repeated 'rounds' times)"]
-    C --> C1["Randomly pick a post from Feed"]
-    C1 --> C2["Select an agent (excluding the post author)"]
-    C2 --> C3["Generate reply"]
-    C3 --> C4["Add reply to Feed (enables threading)"]
-    C4 --> C5{More rounds?}
-    C5 -- Yes --> C1
-    C5 -- No --> D["Return Transcript"]
+    A["run_episode(rounds=3, topic)"] --> B["Phase 1: Posting"]
+    B --> B1["ALL agents generate posts"]
+    B1 --> B2["Add posts to Feed"]
+    B2 --> C["Phase 2: Engagement (repeated 'rounds' times)"]
+    C --> C1["Shuffle agents"]
+    C1 --> C2["Each agent picks a post from Feed"]
+    C2 --> C3{"should_engage()?"}
+    C3 -- Yes --> C4["Generate reply → add to Feed"]
+    C3 -- No --> C5["Log as 'pass' event"]
+    C4 --> C6{More agents?}
+    C5 --> C6
+    C6 -- Yes --> C2
+    C6 -- No --> C7{More rounds?}
+    C7 -- Yes --> C1
+    C7 -- No --> D["Return Transcript"]
 ```
 
-### Transcript (Output) Structure
-
-`run_episode()` returns a `List[Dict]` transcript:
+### Transcript Structure
 
 ```python
 transcript = [
-    {
-        "type": "post",
-        "author": "Alice",
-        "content": "Thinking about the latest AI trends..."
-    },
-    {
-        "type": "reply",
-        "author": "Bob",
-        "target_author": "Alice",
-        "content": "Interesting perspective! Especially...",
-        "reply_to": "Thinking about the latest AI trends..."
-    }
+    {"type": "post", "author": "Alice", "content": "..."},
+    {"type": "reply", "author": "Bob", "target_author": "Alice",
+     "content": "...", "reply_to": "..."},
+    {"type": "pass", "author": "Charlie", "target_author": "Alice"}
 ]
 ```
 
-| Field | Type | Description |
+| Type | Fields | Description |
 |---|---|---|
-| `type` | `str` | `"post"` or `"reply"` |
-| `author` | `str` | Persona name of the speaker |
-| `content` | `str` | Post/reply text |
-| `target_author` | `str` | Name of the persona being replied to (reply only) |
-| `reply_to` | `str` | Text of the original post (reply only) |
+| `post` | `author`, `content` | Agent's initial post |
+| `reply` | `author`, `target_author`, `content`, `reply_to` | Agent's reply to another post |
+| `pass` | `author`, `target_author` | Agent decided NOT to engage |
 
 ## Design Decisions
 
-- **Random selection**: Posters and repliers are chosen randomly, producing diverse interaction patterns
-- **Flat feed**: All events live in a single list. Thread-like structures are a future enhancement
-- **Episode-based**: 1 episode = posts + replies on a single topic. Multiple episodes per generation can be run
+- **Persona-driven engagement**: Agents use LLM to decide whether to reply, producing more realistic interaction patterns
+- **Pass events in transcript**: Logged so evaluators can measure selectivity and engagement quality
+- **All-post-first**: Every agent posts before any replies begin, ensuring a rich feed for engagement decisions
 
 ## Extension Points
 
-- **Thread structure**: Manage replies as a tree for more natural conversation flow
-- **Memory utilization**: Include agent memory in LLM prompts to maintain conversational context
+- **Thread structure**: Manage replies as a tree for natural conversation flow
+- **Memory in prompts**: Feed agent memory into LLM context for more consistent conversations
 - **Reactions**: Add "like," "retweet," and other social actions
-- **Topic diversification**: Run episodes on multiple topics to evaluate persona breadth
+- **Topic diversification**: Run episodes on multiple topics
