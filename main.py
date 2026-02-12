@@ -3,16 +3,14 @@ Entry point for the evolutionary persona prompt generation system.
 
 Usage examples::
 
-    # Mock mode (no API keys required)
-    python -m snackPersona.main --llm mock --generations 3 --pop_size 4
+
 
     # Gemini Flash
     export GEMINI_API_KEY="..."
     python -m snackPersona.main --llm gemini-flash --generations 5 --pop_size 8
 
-    # OpenAI GPT-4o
-    export OPENAI_API_KEY="..."
-    python -m snackPersona.main --llm openai-gpt4o
+    # Generate seed personas via LLM
+    python -m snackPersona.main --llm gemini-3-flash --generate-seeds --generations 5
 
     # List available presets
     python -m snackPersona.main --list-presets
@@ -30,7 +28,7 @@ from snackPersona.utils.data_models import PersonaGenotype
 from snackPersona.llm.llm_factory import create_llm_client, list_presets
 from snackPersona.persona_store.store import PersonaStore
 from snackPersona.evaluation.evaluator import LLMEvaluator
-from snackPersona.orchestrator.operators import SimpleFieldMutator, LLMMutator, MixTraitsCrossover
+from snackPersona.orchestrator.operators import LLMMutator, LLMCrossover
 from snackPersona.orchestrator.engine import EvolutionEngine
 from snackPersona.utils.media_dataset import MediaDataset
 from snackPersona.utils.logger import logger
@@ -53,23 +51,22 @@ def load_seed_population(path: str) -> List[PersonaGenotype]:
 async def generate_seed_personas_async(
     llm_client, count: int
 ) -> Optional[List[PersonaGenotype]]:
-    """Ask the LLM to generate diverse seed personas."""
+    """Ask the LLM to generate diverse seed personas as free-form descriptions."""
     system_prompt = "You are an expert character designer for social media simulations."
-    user_prompt = f"""Generate exactly {count} diverse, unique social media personas.
+    user_prompt = f"""Generate exactly {count} diverse, unique social media user personas.
 Each persona must be a JSON object with these fields:
-- name (string): a unique first name
-- age (int, 18-65)
-- occupation (string)
-- backstory (string, 1-2 sentences)
-- core_values (list of 2-3 strings)
-- hobbies (list of 2-3 strings)
-- personality_traits (object with 2-3 keys mapping to floats 0.0-1.0, e.g. openness, conscientiousness, extraversion, agreeableness, neuroticism)
-- communication_style (string, e.g. "casual", "formal", "witty")
-- topical_focus (string, what they mainly post about)
-- interaction_policy (string, how they interact with others)
-- goals (list of 2-3 strings, their SNS goals)
+- name (string): a creative SNS nickname / display name
+- description (string): a detailed, natural-language character description covering:
+  - who they are (age, job, life situation)
+  - how they post on social media (tone, frequency, style)
+  - what topics they care about
+  - quirks, habits, and behavioral patterns
+  - what triggers them to engage or stay silent
 
-Make the personas diverse in age, occupation, values, and interests.
+Make the personas feel like REAL SNS users — not idealized characters.
+Include a mix of ages, backgrounds, motivations, and posting styles.
+Some should be very active, some lurkers. Some opinionated, some chill.
+
 Return ONLY a JSON array of {count} objects. No markdown, no explanation."""
 
     try:
@@ -112,7 +109,7 @@ async def async_main():
                         help="Number of generations to evolve")
     parser.add_argument("--pop_size", type=int, default=4,
                         help="Population size")
-    parser.add_argument("--llm", type=str, default="mock",
+    parser.add_argument("--llm", type=str, default="gemini-flash",
                         help="LLM preset name (see --list-presets)")
     parser.add_argument("--list-presets", action="store_true",
                         help="List available LLM presets and exit")
@@ -159,16 +156,10 @@ async def async_main():
         else:
             logger.warning(f"Media dataset file not found at {args.media_dataset}")
 
-    # Choose mutator based on backend
-    is_mock = (args.llm == "mock")
+    # Always use LLM-based operators
     evaluator = LLMEvaluator(llm_client)
-    if is_mock:
-        mutation_op = SimpleFieldMutator()
-    else:
-        logger.info("Using LLM-based Evaluator and Mutator")
-        mutation_op = LLMMutator(llm_client)
-
-    crossover_op = MixTraitsCrossover()
+    mutation_op = LLMMutator(llm_client)
+    crossover_op = LLMCrossover(llm_client)
 
     # 4. Initialize Engine
     engine = EvolutionEngine(
@@ -207,14 +198,12 @@ async def async_main():
                 logger.warning(f"Seed file not found at {seed_path}, using minimal defaults")
                 seeds = [
                     PersonaGenotype(
-                        name="Default", age=25, occupation="Thinker",
-                        backstory="A curious mind.",
-                        core_values=["curiosity"], hobbies=["reading"],
-                        personality_traits={"openness": 0.8},
-                        communication_style="casual",
-                        topical_focus="general",
-                        interaction_policy="ask questions",
-                        goals=["learn"]
+                        name="DefaultUser",
+                        description=(
+                            "A 25-year-old curious person who browses social media casually. "
+                            "Posts occasionally about things they find interesting. "
+                            "Friendly but not overly enthusiastic. Lurks more than posts."
+                        ),
                     )
                 ]
 

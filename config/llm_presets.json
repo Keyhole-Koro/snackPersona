@@ -1,8 +1,4 @@
 {
-    "mock": {
-        "backend": "mock",
-        "description": "Mock LLM for local testing (no API key needed)"
-    },
     "gemini-flash": {
         "backend": "gemini",
         "model": "gemini-2.0-flash",

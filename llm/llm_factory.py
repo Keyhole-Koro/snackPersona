@@ -9,7 +9,7 @@ import json
 import os
 from typing import Optional
 
-from snackPersona.llm.llm_client import LLMClient, MockLLMClient, OpenAIClient, BedrockClient
+from snackPersona.llm.llm_client import LLMClient, OpenAIClient, BedrockClient
 from snackPersona.llm.rate_limiter import RateLimiter, NoOpRateLimiter
 from snackPersona.utils.logger import logger
 
@@ -40,7 +40,7 @@ def create_llm_client(
     Parameters
     ----------
     preset_name : str
-        Name of the preset (e.g. ``"mock"``, ``"gemini-flash"``).
+        Name of the preset (e.g. ``"gemini-flash"``).
     presets_path : str, optional
         Path to a custom presets JSON file.
 
@@ -62,9 +62,7 @@ def create_llm_client(
     rl_cfg = cfg.get("rate_limit", {})
 
     # Build rate limiter
-    if backend == "mock":
-        rate_limiter = NoOpRateLimiter()
-    elif rl_cfg:
+    if rl_cfg:
         rate_limiter = RateLimiter(
             requests_per_minute=rl_cfg.get("requests_per_minute", 60),
             tokens_per_minute=rl_cfg.get("tokens_per_minute", 150_000),
@@ -74,10 +72,7 @@ def create_llm_client(
 
     logger.info(f"Creating LLM client: preset='{preset_name}' backend='{backend}' model='{model}'")
 
-    if backend == "mock":
-        return MockLLMClient()
-
-    elif backend == "gemini":
+    if backend == "gemini":
         from snackPersona.llm.gemini_client import GeminiClient
         return GeminiClient(model=model, rate_limiter=rate_limiter)
 

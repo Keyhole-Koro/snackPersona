@@ -67,10 +67,11 @@ class EvolutionLogger:
 
             agents_data.append({
                 "name": ind.genotype.name,
+                "post_quality": round(s.post_quality, 4),
+                "reply_quality": round(s.reply_quality, 4),
                 "engagement": round(s.engagement, 4),
-                "conversation_quality": round(s.conversation_quality, 4),
+                "authenticity": round(s.authenticity, 4),
                 "diversity": round(s.diversity, 4),
-                "persona_fidelity": round(s.persona_fidelity, 4),
                 "safety": round(s.safety, 4),
                 "raw_fitness": round(raw, 4),
                 "shared_fitness": round(ind.shared_fitness, 4),
@@ -100,9 +101,9 @@ class EvolutionLogger:
         )
         for a in agents_data:
             logger.info(
-                f"  {a['name']:>12s}: "
-                f"Eng={a['engagement']:.2f} Qual={a['conversation_quality']:.2f} "
-                f"Div={a['diversity']:.2f} Fid={a['persona_fidelity']:.2f} | "
+                f"  {a['name']:>14s}: "
+                f"Post={a['post_quality']:.2f} Reply={a['reply_quality']:.2f} "
+                f"Auth={a['authenticity']:.2f} Div={a['diversity']:.2f} | "
                 f"Raw={a['raw_fitness']:.3f} Shared={a['shared_fitness']:.3f}"
             )
 

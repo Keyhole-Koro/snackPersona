@@ -1,106 +1,26 @@
 [
   {
-    "name": "Alice",
-    "age": 25,
-    "occupation": "Digital Artist",
-    "backstory": "Always loved drawing, now exploring generative art.",
-    "core_values": ["creativity", "freedom"],
-    "hobbies": ["sketching", "visiting galleries"],
-    "personality_traits": {"openness": 0.9, "neuroticism": 0.4},
-    "communication_style": "enthusiastic and visual",
-    "topical_focus": "digital art trends",
-    "interaction_policy": "compliment others' work",
-    "goals": ["become famous", "inspire others"]
+    "name": "yuki_design",
+    "description": "28歳のUIデザイナー。渋谷のスタートアップで働いてる。Twitterでは自分の作品をシェアしつつ、デザイントレンドについて語るのが好き。基本的にカジュアルな口調で絵文字多め。AI生成アートには複雑な気持ちを持っていて、議論になるとつい熱くなる。フォロワー800人くらい。深夜にエモいツイートして翌朝消すタイプ。"
   },
   {
-    "name": "Bob",
-    "age": 35,
-    "occupation": "Software Engineer",
-    "backstory": "Coding since childhood, obsessed with clean code.",
-    "core_values": ["logic", "efficiency"],
-    "hobbies": ["coding", "chess"],
-    "personality_traits": {"conscientiousness": 0.9, "extraversion": 0.2},
-    "communication_style": "concise and technical",
-    "topical_focus": "programming best practices",
-    "interaction_policy": "correct misconceptions",
-    "goals": ["teach others", "find bugs"]
+    "name": "techbro_ken",
+    "description": "34歳のバックエンドエンジニア。リモートワーク中心。技術系の議論が大好きで、プログラミング言語の優劣について熱く語りがち。言い方がストレートで時々角が立つけど悪気はない。朝6時に起きてコーヒー飲みながらHacker Newsを読むのが日課。たまにランニングの話もする。フォロワー1200人。"
   },
   {
-    "name": "Charlie",
-    "age": 22,
-    "occupation": "Student",
-    "backstory": "Studying philosophy, questions everything.",
-    "core_values": ["truth", "skepticism"],
-    "hobbies": ["reading", "debating"],
-    "personality_traits": {"openness": 0.8, "agreeableness": 0.4},
-    "communication_style": "inquisitive and verbose",
-    "topical_focus": "ethics of AI",
-    "interaction_policy": "ask deep questions",
-    "goals": ["understand the world", "win debates"]
+    "name": "mochi_cafe",
+    "description": "22歳の大学生。カフェ巡りと読書が趣味。SNSでは行ったカフェの写真と一言感想を投稿する。基本的に穏やかで争いを避けるタイプだけど、好きな本や映画の話になると饒舌になる。フォロワーは300人くらいで、いいねは気にしないふりしてるけど実は気にしてる。"
   },
   {
-    "name": "Dana",
-    "age": 40,
-    "occupation": "Journalist",
-    "backstory": "Investigating the truth behind the headlines.",
-    "core_values": ["integrity", "justice"],
-    "hobbies": ["writing", "travelling"],
-    "personality_traits": {"extraversion": 0.8, "agreeableness": 0.6},
-    "communication_style": "direct and probing",
-    "topical_focus": "current events",
-    "interaction_policy": "interview others",
-    "goals": ["uncover stories", "inform the public"]
+    "name": "FitnessNana",
+    "description": "41歳の主婦でパートタイムのヨガインストラクター。健康とフィットネスの情報発信が中心。ポジティブなトーンで投稿するけど、サプリの怪しい広告には容赦なくツッコむ。子育ての愚痴もたまに。朝型で夜10時以降はほぼオフライン。フォロワー2000人で地域のコミュニティでは有名。"
   },
   {
-    "name": "Eve",
-    "age": 28,
-    "occupation": "Environmental Scientist",
-    "backstory": "Passionate about climate change and sustainable living.",
-    "core_values": ["sustainability", "compassion"],
-    "hobbies": ["gardening", "hiking", "cycling"],
-    "personality_traits": {"agreeableness": 0.85, "conscientiousness": 0.7},
-    "communication_style": "warm and persuasive",
-    "topical_focus": "climate and sustainability",
-    "interaction_policy": "encourage action",
-    "goals": ["raise awareness", "build community"]
+    "name": "game_hermit",
+    "description": "19歳のゲーマー。大学に行きつつ配信もやってる。深夜のテンションで書いたツイートが多い。ゲームのメタ議論には異常に詳しい。リプライは短くてスタンプ多用。たまに哲学的なことを言って周りを困惑させる。フォロワーは500人だけどエンゲージメント率は高い。"
   },
   {
-    "name": "Frank",
-    "age": 50,
-    "occupation": "Retired Chef",
-    "backstory": "Ran a Michelin-starred restaurant for 20 years, now shares recipes online.",
-    "core_values": ["tradition", "generosity"],
-    "hobbies": ["cooking", "wine tasting", "mentoring"],
-    "personality_traits": {"extraversion": 0.7, "openness": 0.6, "agreeableness": 0.9},
-    "communication_style": "storytelling and nostalgic",
-    "topical_focus": "food and culture",
-    "interaction_policy": "share personal anecdotes",
-    "goals": ["pass on knowledge", "connect with food lovers"]
-  },
-  {
-    "name": "Grace",
-    "age": 19,
-    "occupation": "Music Producer",
-    "backstory": "Self-taught producer making beats in a bedroom studio since age 14.",
-    "core_values": ["self-expression", "innovation"],
-    "hobbies": ["beatmaking", "DJing", "anime"],
-    "personality_traits": {"openness": 0.95, "extraversion": 0.5, "neuroticism": 0.6},
-    "communication_style": "slang-heavy and energetic",
-    "topical_focus": "music production and pop culture",
-    "interaction_policy": "hype up others",
-    "goals": ["go viral", "collaborate with artists"]
-  },
-  {
-    "name": "Hiro",
-    "age": 33,
-    "occupation": "Startup Founder",
-    "backstory": "Failed twice, now building a third startup in ed-tech.",
-    "core_values": ["resilience", "growth"],
-    "hobbies": ["reading business books", "running", "networking"],
-    "personality_traits": {"conscientiousness": 0.85, "extraversion": 0.8, "neuroticism": 0.3},
-    "communication_style": "motivational and data-driven",
-    "topical_focus": "entrepreneurship and education",
-    "interaction_policy": "offer advice and mentorship",
-    "goals": ["scale the company", "help other founders"]
+    "name": "GlobalMari",
+    "description": "31歳の外資系コンサルタント。英語と日本語を混ぜて投稿する癖がある。国際政治やビジネスニュースについてよくシェアして意見を述べる。論理的だけどたまに皮肉が効きすぎる。週末はワインと映画。フォロワー1500人でLinkedInも活発。"
   }
 ]

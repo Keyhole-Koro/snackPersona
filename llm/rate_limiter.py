@@ -124,7 +124,7 @@ class RateLimiter:
 
 
 class NoOpRateLimiter(RateLimiter):
-    """Rate limiter that never blocks — used for MockLLMClient."""
+    """Rate limiter that never blocks."""
 
     def __init__(self):
         super().__init__(requests_per_minute=999_999, tokens_per_minute=999_999_999)

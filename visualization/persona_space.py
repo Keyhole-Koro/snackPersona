@@ -1,16 +1,19 @@
 """
 Persona space dimensionality reduction and visualization.
 
+Uses sentence embeddings of persona descriptions for meaningful
+2-D projections via PCA and t-SNE.
+
 Generates:
-  - persona_space_pca.png   : PCA 2-D projection of genotype vectors
-  - persona_space_tsne.png  : t-SNE 2-D projection of genotype vectors
+  - persona_space_pca.png   : PCA 2-D projection
+  - persona_space_tsne.png  : t-SNE 2-D projection
 
 Each dot is an individual persona coloured by generation.
 """
 
 import json
 import os
-from typing import List, Dict, Optional, Tuple
+from typing import List, Optional, Tuple
 
 import numpy as np
 
@@ -24,74 +27,45 @@ from snackPersona.utils.logger import logger
 
 
 # ------------------------------------------------------------------ #
-#  Feature extraction
+#  Feature extraction via sentence embeddings
 # ------------------------------------------------------------------ #
 
-# Categorical vocabularies built on first call
-_VOCAB_CACHE: Dict[str, Dict[str, int]] = {}
+_MODEL_CACHE = None
 
 
-def _build_vocab(values: List[str], name: str) -> Dict[str, int]:
-    if name not in _VOCAB_CACHE:
-        unique = sorted(set(values))
-        _VOCAB_CACHE[name] = {v: i for i, v in enumerate(unique)}
-    return _VOCAB_CACHE[name]
+def _get_embedding_model():
+    """Lazy-load sentence-transformers model."""
+    global _MODEL_CACHE
+    if _MODEL_CACHE is None:
+        try:
+            from sentence_transformers import SentenceTransformer
+            _MODEL_CACHE = SentenceTransformer("all-MiniLM-L6-v2")
+        except ImportError:
+            logger.warning("sentence-transformers not installed, using fallback vectorization")
+            return None
+    return _MODEL_CACHE
 
 
-def _persona_to_vector(
-    g: PersonaGenotype,
-    all_hobbies: List[str],
-    all_values: List[str],
-    all_goals: List[str],
-    style_vocab: Dict[str, int],
-    topic_vocab: Dict[str, int],
-) -> np.ndarray:
-    """Convert a PersonaGenotype into a fixed-length numeric vector."""
-    features: List[float] = []
+def _persona_to_vector_embedding(personas: List[PersonaGenotype]) -> np.ndarray:
+    """Convert personas to vectors using sentence embeddings."""
+    model = _get_embedding_model()
+    if model is None:
+        return _persona_to_vector_fallback(personas)
+    texts = [f"{p.name}: {p.description}" for p in personas]
+    embeddings = model.encode(texts, show_progress_bar=False)
+    return np.array(embeddings, dtype=np.float64)
 
-    # Age — normalised
-    features.append((g.age - 18) / 62.0)
 
-    # Personality traits (sorted keys for consistency)
-    trait_keys = sorted({
-        "openness", "conscientiousness", "extraversion",
-        "agreeableness", "neuroticism",
-    })
-    for k in trait_keys:
-        features.append(g.personality_traits.get(k, 0.5))
-
-    # Multi-hot: hobbies
-    hobby_set = set(g.hobbies)
-    for h in all_hobbies:
-        features.append(1.0 if h in hobby_set else 0.0)
-
-    # Multi-hot: core values
-    val_set = set(g.core_values)
-    for v in all_values:
-        features.append(1.0 if v in val_set else 0.0)
-
-    # Multi-hot: goals
-    goal_set = set(g.goals)
-    for gl in all_goals:
-        features.append(1.0 if gl in goal_set else 0.0)
-
-    # One-hot: communication style
-    n_styles = len(style_vocab)
-    style_vec = [0.0] * n_styles
-    idx = style_vocab.get(g.communication_style, -1)
-    if idx >= 0:
-        style_vec[idx] = 1.0
-    features.extend(style_vec)
-
-    # One-hot: topical focus
-    n_topics = len(topic_vocab)
-    topic_vec = [0.0] * n_topics
-    idx = topic_vocab.get(g.topical_focus, -1)
-    if idx >= 0:
-        topic_vec[idx] = 1.0
-    features.extend(topic_vec)
-
-    return np.array(features, dtype=np.float64)
+def _persona_to_vector_fallback(personas: List[PersonaGenotype]) -> np.ndarray:
+    """Fallback: simple character-level frequency vector."""
+    chars = "abcdefghijklmnopqrstuvwxyz0123456789 "
+    vectors = []
+    for p in personas:
+        text = (p.name + " " + p.description).lower()
+        total = max(len(text), 1)
+        vec = [text.count(c) / total for c in chars]
+        vectors.append(vec)
+    return np.array(vectors, dtype=np.float64)
 
 
 def _load_all_personas(store_dir: str) -> Tuple[List[PersonaGenotype], List[int]]:
@@ -125,23 +99,7 @@ def _load_all_personas(store_dir: str) -> Tuple[List[PersonaGenotype], List[int]
 
 def _vectorise(personas: List[PersonaGenotype]) -> np.ndarray:
     """Convert a list of personas to a feature matrix (N × D)."""
-    # Collect vocabularies
-    all_hobbies = sorted({h for p in personas for h in p.hobbies})
-    all_values = sorted({v for p in personas for v in p.core_values})
-    all_goals = sorted({g for p in personas for g in p.goals})
-
-    style_vocab = _build_vocab(
-        [p.communication_style for p in personas], "style"
-    )
-    topic_vocab = _build_vocab(
-        [p.topical_focus for p in personas], "topic"
-    )
-
-    vecs = [
-        _persona_to_vector(p, all_hobbies, all_values, all_goals, style_vocab, topic_vocab)
-        for p in personas
-    ]
-    return np.vstack(vecs)
+    return _persona_to_vector_embedding(personas)
 
 
 # ------------------------------------------------------------------ #
@@ -199,7 +157,7 @@ def _scatter_plot(
 
 
 def plot_persona_space_pca(store_dir: str, output_dir: Optional[str] = None) -> str:
-    """PCA 2-D projection of persona genotype space."""
+    """PCA 2-D projection of persona description space."""
     from sklearn.decomposition import PCA
 
     personas, gen_ids = _load_all_personas(store_dir)
@@ -222,7 +180,7 @@ def plot_persona_space_pca(store_dir: str, output_dir: Optional[str] = None) -> 
 
 
 def plot_persona_space_tsne(store_dir: str, output_dir: Optional[str] = None) -> str:
-    """t-SNE 2-D projection of persona genotype space."""
+    """t-SNE 2-D projection of persona description space."""
     from sklearn.manifold import TSNE
 
     personas, gen_ids = _load_all_personas(store_dir)

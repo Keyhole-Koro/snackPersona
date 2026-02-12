@@ -27,10 +27,11 @@ from snackPersona.utils.logger import logger, EvolutionLogger
 # Default config — overridden by JSON config if provided
 DEFAULT_CONFIG = {
     "fitness_weights": {
-        "engagement": 0.35,
-        "conversation_quality": 0.35,
-        "diversity": 0.20,
-        "persona_fidelity": 0.10,
+        "post_quality": 0.25,
+        "reply_quality": 0.25,
+        "engagement": 0.15,
+        "authenticity": 0.20,
+        "diversity": 0.15,
     },
     "niching": {
         "sigma": 0.5,
@@ -120,10 +121,11 @@ class EvolutionEngine:
         s = ind.scores
         w = self.fitness_weights
         return (
-            w['engagement'] * s.engagement
-            + w['conversation_quality'] * s.conversation_quality
-            + w['diversity'] * s.diversity
-            + w['persona_fidelity'] * s.persona_fidelity
+            w.get('post_quality', 0.25) * s.post_quality
+            + w.get('reply_quality', 0.25) * s.reply_quality
+            + w.get('engagement', 0.15) * s.engagement
+            + w.get('authenticity', 0.20) * s.authenticity
+            + w.get('diversity', 0.15) * s.diversity
         )
 
     def _sharing_function(self, distance: float) -> float:
@@ -338,15 +340,13 @@ class EvolutionEngine:
         return next_gen
 
     def _generate_nickname(self, genotype: PersonaGenotype) -> PersonaGenotype:
-        """Ask the LLM to create a creative nickname based on persona attributes."""
+        """Ask the LLM to create a creative nickname based on persona description."""
+        # Truncate description to avoid overly long prompts
+        desc_preview = genotype.description[:300]
         user_prompt = (
             f"Create a short, creative social-media nickname (one word, no spaces, "
-            f"no special characters) for a persona with these attributes:\n"
-            f"- Occupation: {genotype.occupation}\n"
-            f"- Hobbies: {', '.join(genotype.hobbies)}\n"
-            f"- Values: {', '.join(genotype.core_values)}\n"
-            f"- Style: {genotype.communication_style}\n"
-            f"- Focus: {genotype.topical_focus}\n"
+            f"no special characters) for this person:\n"
+            f"{desc_preview}\n\n"
             f"Reply with ONLY the nickname, nothing else."
         )
         try:

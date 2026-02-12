@@ -87,8 +87,8 @@ def plot_fitness_components(store_dir: str, output_dir: Optional[str] = None) ->
     out = output_dir or os.path.join(store_dir, "plots")
     os.makedirs(out, exist_ok=True)
 
-    components = ["engagement", "conversation_quality", "diversity", "persona_fidelity"]
-    colors = ["#2196F3", "#4CAF50", "#FF9800", "#9C27B0"]
+    components = ["post_quality", "reply_quality", "engagement", "authenticity", "diversity"]
+    colors = ["#2196F3", "#4CAF50", "#FF9800", "#9C27B0", "#E91E63"]
 
     gens = [r["generation"] for r in records]
 

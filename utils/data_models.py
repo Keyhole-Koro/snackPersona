@@ -3,34 +3,20 @@ from typing import List, Dict, Any, Optional
 
 # ==============================================================================
 # 1. Persona Genotype and Phenotype
-# As per the doc, "Structured JSON persona + fixed template" is a good choice.
+# Free-form description approach for realistic SNS persona simulation.
 # ==============================================================================
 
 class PersonaGenotype(BaseModel):
     """
-    Represents the "genes" of a persona. This is a structured object
-    that can be mutated and crossed-over during evolution.
+    Represents the "genes" of a persona as a free-form role-play description.
+    The description captures personality, behavior, posting style, and quirks
+    in natural language rather than structured fields.
     """
-    # Core Identity
-    name: str = Field(description="The persona's name.")
-    age: int = Field(description="The persona's age.", ge=18)
-    occupation: str = Field(description="The persona's occupation.")
-    backstory: str = Field(description="A brief backstory of the persona.")
-
-    # Traits and Values
-    core_values: List[str] = Field(description="A list of core values (e.g., 'honesty', 'curiosity').")
-    hobbies: List[str] = Field(description="A list of hobbies and interests.")
-    personality_traits: Dict[str, float] = Field(
-        description="Key personality traits on a 0-1 scale (e.g., {'introversion': 0.8, 'agreeableness': 0.3})."
+    name: str = Field(description="The persona's SNS display name / nickname.")
+    description: str = Field(
+        description="Free-form character description covering personality, "
+                    "posting habits, interests, tone, quirks, and social behavior."
     )
-
-    # Behavioral and Interaction Style
-    communication_style: str = Field(description="e.g., 'formal', 'casual', 'witty', 'academic'.")
-    topical_focus: str = Field(description="The main topics the persona talks about (e.g., 'tech', 'art').")
-    interaction_policy: str = Field(description="How the persona interacts (e.g., 'asks questions', 'debates').")
-    
-    # Goals
-    goals: List[str] = Field(description="The persona's goals within the SNS (e.g., 'make friends', 'share knowledge').")
 
 
 class PersonaPhenotype(BaseModel):
@@ -39,35 +25,33 @@ class PersonaPhenotype(BaseModel):
     ready-to-use prompt that the LLM agent will execute.
     """
     system_prompt: str
-    policy_instructions: str
 
 
 # ==============================================================================
 # 2. Fitness and Evaluation
+# Content-based evaluation: scoring the actual posts and replies.
 # ==============================================================================
 
 class FitnessScores(BaseModel):
     """
-    A multi-layer scorecard for evaluating an individual persona's performance.
-    All scores should be normalized, typically between 0.0 and 1.0.
+    Content-based scorecard for evaluating SNS persona performance.
+    All scores are normalized between 0.0 and 1.0.
     """
-    # Quality & Engagement
-    conversation_quality: float = 0.0
-    engagement: float = 0.0
-    
-    # Fidelity & Consistency
-    persona_fidelity: float = 0.0
-    
-    # Social & Goal Achievement
-    social_intelligence: float = 0.0
-    goal_achievement: float = 0.0
+    # Content Quality
+    post_quality: float = 0.0       # Are posts interesting, engaging, realistic?
+    reply_quality: float = 0.0      # Are replies natural, relevant, conversational?
+
+    # Participation
+    engagement: float = 0.0         # Active participation level
+
+    # Realism
+    authenticity: float = 0.0       # Does it feel like a real SNS user?
 
     # Safety
-    safety: float = 1.0  # Default to safe
+    safety: float = 1.0             # Default to safe
 
     # Diversity
-    diversity: float = 0.0
-    novelty: float = 0.0
+    diversity: float = 0.0          # Variety in outputs
 
 
 # ==============================================================================
@@ -98,4 +82,3 @@ class MediaItem(BaseModel):
     content: str = Field(description="The text content of the article/media.")
     category: Optional[str] = Field(default=None, description="Optional category or tag (e.g., 'tech', 'politics').")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata (e.g., source, date).")
-

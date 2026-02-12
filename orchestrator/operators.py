@@ -1,29 +1,14 @@
+"""
+Genetic operators for free-form persona descriptions.
+
+Mutation and crossover operate on the description text using the LLM.
+"""
 from abc import ABC, abstractmethod
-from typing import List, Dict, Optional
 import random
 import json
-import os
 from snackPersona.utils.data_models import PersonaGenotype
 from snackPersona.llm.llm_client import LLMClient
 from snackPersona.utils.logger import logger
-
-# Default path for mutation pools
-_POOLS_PATH = os.path.join(os.path.dirname(__file__), '..', 'config', 'mutation_pools.json')
-_pools_cache: Optional[Dict] = None
-
-
-def _load_pools() -> Dict:
-    """Load mutation value pools from JSON, with caching."""
-    global _pools_cache
-    if _pools_cache is None:
-        path = os.path.normpath(_POOLS_PATH)
-        if os.path.exists(path):
-            with open(path) as f:
-                _pools_cache = json.load(f)
-        else:
-            logger.warning(f"Mutation pools not found at {path}, using empty pools")
-            _pools_cache = {}
-    return _pools_cache
 
 
 class MutationOperator(ABC):
@@ -32,139 +17,76 @@ class MutationOperator(ABC):
         pass
 
 
-class SimpleFieldMutator(MutationOperator):
-    """
-    Mutates genotype fields using curated value pools and perturbation.
-    
-    Mutation strategies:
-      - trait_perturb: adjust a personality_trait float by ±delta
-      - list_swap: remove a random item from a list field, add one from pool
-      - style_replace: replace communication_style or topical_focus from pool
-      - age_shift: shift age by ±1‥5, clamped to [18, 80]
-      - backstory_event: append a random life event to backstory
-    """
-
-    def mutate(self, genotype: PersonaGenotype) -> PersonaGenotype:
-        new = genotype.model_copy(deep=True)
-        pools = _load_pools()
-
-        # Pick 1-2 mutation strategies to apply
-        strategies = random.sample(
-            ['trait_perturb', 'list_swap', 'style_replace', 'age_shift', 'backstory_event'],
-            k=random.choice([1, 2])
-        )
-
-        for strategy in strategies:
-            if strategy == 'trait_perturb':
-                new = self._trait_perturb(new)
-            elif strategy == 'list_swap':
-                new = self._list_swap(new, pools)
-            elif strategy == 'style_replace':
-                new = self._style_replace(new, pools)
-            elif strategy == 'age_shift':
-                new = self._age_shift(new)
-            elif strategy == 'backstory_event':
-                new = self._backstory_event(new, pools)
-
-        logger.debug(f"Mutated {genotype.name} with strategies: {strategies}")
-        return new
-
-    @staticmethod
-    def _trait_perturb(g: PersonaGenotype) -> PersonaGenotype:
-        """Perturb a random personality trait by ±0.15."""
-        if not g.personality_traits:
-            return g
-        key = random.choice(list(g.personality_traits.keys()))
-        delta = random.uniform(-0.15, 0.15)
-        new_val = max(0.0, min(1.0, g.personality_traits[key] + delta))
-        g.personality_traits[key] = round(new_val, 3)
-        return g
-
-    @staticmethod
-    def _list_swap(g: PersonaGenotype, pools: Dict) -> PersonaGenotype:
-        """Remove a random item from a list field, add one from the pool."""
-        field_pool_map = {
-            'hobbies': 'hobbies',
-            'core_values': 'core_values',
-            'goals': 'core_values',  # no dedicated goals pool, reuse values
-        }
-        field = random.choice(list(field_pool_map.keys()))
-        current: List[str] = getattr(g, field)
-        pool_key = field_pool_map[field]
-        pool = pools.get(pool_key, [])
-
-        if current and len(current) > 1:
-            current.remove(random.choice(current))
-        if pool:
-            candidates = [v for v in pool if v not in current]
-            if candidates:
-                current.append(random.choice(candidates))
-        setattr(g, field, current)
-        return g
-
-    @staticmethod
-    def _style_replace(g: PersonaGenotype, pools: Dict) -> PersonaGenotype:
-        """Replace communication_style or topical_focus from pool."""
-        if random.random() < 0.5:
-            styles = pools.get('communication_styles', [])
-            if styles:
-                g.communication_style = random.choice(styles)
-        else:
-            topics = pools.get('topical_focuses', [])
-            if topics:
-                g.topical_focus = random.choice(topics)
-        return g
-
-    @staticmethod
-    def _age_shift(g: PersonaGenotype) -> PersonaGenotype:
-        """Shift age by ±1..5, clamped to [18, 80]."""
-        delta = random.randint(1, 5) * random.choice([-1, 1])
-        g.age = max(18, min(80, g.age + delta))
-        return g
-
-    @staticmethod
-    def _backstory_event(g: PersonaGenotype, pools: Dict) -> PersonaGenotype:
-        """Append a random life event to backstory."""
-        events = pools.get('life_events', [])
-        if events:
-            event = random.choice(events)
-            g.backstory = g.backstory.rstrip('.') + '. ' + event
-        return g
-
-
 class LLMMutator(MutationOperator):
     """
-    Uses an LLM to mutate the persona in meaningful ways.
-    Falls back to SimpleFieldMutator on failure.
+    Mutates a persona's description using an LLM.
+    Asks the LLM to alter one or two aspects of the character
+    while keeping the overall identity coherent.
     """
     def __init__(self, llm_client: LLMClient):
         self.llm_client = llm_client
 
     def mutate(self, genotype: PersonaGenotype) -> PersonaGenotype:
-        user_prompt = f"""
-        Mutate the following persona genotype to create a slightly different variation.
-        You MUST give the persona a completely new, unique first name.
-        Maintain the core identity but change one or two aspects (e.g. valid hobbies, or a slight shift in values).
-        
-        Original JSON:
-        {genotype.model_dump_json()}
-        
-        Return ONLY valid JSON of the new PersonaGenotype.
-        """
-        
-        response = self.llm_client.generate_text("You are a genetic algorithm mutation operator.", user_prompt)
-        
+        aspect = random.choice([
+            "personality or temperament",
+            "posting habits or frequency",
+            "interests or hobbies",
+            "communication tone or style",
+            "a quirk or recurring behavior",
+            "their backstory or life situation",
+            "their social media goals or motivations",
+        ])
+
+        user_prompt = f"""Here is an SNS user character description:
+
+Name: {genotype.name}
+Description: {genotype.description}
+
+Create a VARIATION of this character by changing their {aspect}.
+Keep most of the original character intact but make the change feel natural.
+Also give them a new, creative SNS nickname.
+
+Return ONLY valid JSON: {{"name": "...", "description": "..."}}
+"""
+        response = self.llm_client.generate_text(
+            "You are a creative character designer for social media simulations.",
+            user_prompt,
+        )
+
         try:
             if "```json" in response:
                 response = response.split("```json")[1].split("```")[0]
             elif "```" in response:
                 response = response.split("```")[1].split("```")[0]
-                
             data = json.loads(response.strip())
-            return PersonaGenotype(**data)
+            return PersonaGenotype(
+                name=data.get("name", genotype.name),
+                description=data.get("description", genotype.description),
+            )
         except Exception:
-            logger.warning(f"LLMMutator failed for {genotype.name}, falling back to SimpleFieldMutator")
-            return SimpleFieldMutator().mutate(genotype)
+            logger.warning(f"LLMMutator failed for {genotype.name}, applying text perturbation")
+            return self._fallback_mutate(genotype)
+
+    @staticmethod
+    def _fallback_mutate(genotype: PersonaGenotype) -> PersonaGenotype:
+        """Simple fallback: append a random trait modifier to the description."""
+        modifiers = [
+            "Recently started getting into cooking videos.",
+            "Has been posting more late at night recently.",
+            "Just discovered a new favorite podcast.",
+            "Going through a minimalist phase.",
+            "Started working out and won't stop talking about it.",
+            "Picked up photography as a hobby.",
+            "Became obsessed with a new TV show.",
+            "Trying to reduce screen time but failing.",
+            "Just got a new pet and posts about it constantly.",
+            "Going through a career change.",
+        ]
+        new_desc = genotype.description.rstrip() + " " + random.choice(modifiers)
+        return PersonaGenotype(
+            name=genotype.name + str(random.randint(10, 99)),
+            description=new_desc,
+        )
 
 
 class CrossoverOperator(ABC):
@@ -173,31 +95,73 @@ class CrossoverOperator(ABC):
         pass
 
 
-class MixTraitsCrossover(CrossoverOperator):
+class LLMCrossover(CrossoverOperator):
     """
-    Simple crossover that mixes fields from two parents.
+    Merges two persona descriptions into a new character using an LLM.
+    Takes elements from both parents to create a coherent new persona.
     """
-    def crossover(self, parent_a: PersonaGenotype, parent_b: PersonaGenotype) -> PersonaGenotype:
-        pools = _load_pools()
-        names = pools.get('names', [])
+    def __init__(self, llm_client: LLMClient):
+        self.llm_client = llm_client
 
-        # Assign a fresh random name from the pool
-        name = random.choice(names) if names else f"Child-{random.randint(100,999)}"
-        age = parent_a.age if random.random() > 0.5 else parent_b.age
-        
-        # Mix lists
-        goals = list(set(parent_a.goals[:len(parent_a.goals)//2] + parent_b.goals[len(parent_b.goals)//2:]))
-        
+    def crossover(self, parent_a: PersonaGenotype, parent_b: PersonaGenotype) -> PersonaGenotype:
+        user_prompt = f"""Here are two SNS user characters:
+
+**Character A:** {parent_a.name}
+{parent_a.description}
+
+**Character B:** {parent_b.name}
+{parent_b.description}
+
+Create a NEW character that combines elements from BOTH characters.
+Take some traits, habits, or interests from A and some from B.
+The result should feel like a natural, coherent person — not a Frankenstein mix.
+Give them a fresh, creative SNS nickname.
+
+Return ONLY valid JSON: {{"name": "...", "description": "..."}}
+"""
+        response = self.llm_client.generate_text(
+            "You are a creative character designer for social media simulations.",
+            user_prompt,
+        )
+
+        try:
+            if "```json" in response:
+                response = response.split("```json")[1].split("```")[0]
+            elif "```" in response:
+                response = response.split("```")[1].split("```")[0]
+            data = json.loads(response.strip())
+            return PersonaGenotype(
+                name=data.get("name", f"Mix-{random.randint(100,999)}"),
+                description=data.get("description", parent_a.description),
+            )
+        except Exception:
+            logger.warning(
+                f"LLMCrossover failed for {parent_a.name} x {parent_b.name}, "
+                f"using text splice"
+            )
+            return self._fallback_crossover(parent_a, parent_b)
+
+    @staticmethod
+    def _fallback_crossover(a: PersonaGenotype, b: PersonaGenotype) -> PersonaGenotype:
+        """Fallback: take first half of A's description, second half of B's."""
+        sentences_a = a.description.split("。")
+        sentences_b = b.description.split("。")
+
+        # If Japanese-style splitting didn't work, try period
+        if len(sentences_a) <= 1:
+            sentences_a = a.description.split(". ")
+        if len(sentences_b) <= 1:
+            sentences_b = b.description.split(". ")
+
+        mid_a = len(sentences_a) // 2
+        mid_b = len(sentences_b) // 2
+
+        # Take first half from A, second half from B
+        merged = sentences_a[:max(mid_a, 1)] + sentences_b[max(mid_b, 1):]
+        sep = "。" if "。" in a.description else ". "
+        description = sep.join(s for s in merged if s.strip())
+
         return PersonaGenotype(
-            name=name,
-            age=age,
-            occupation=parent_a.occupation,
-            backstory=parent_b.backstory,
-            core_values=parent_a.core_values,
-            hobbies=parent_b.hobbies,
-            personality_traits=parent_a.personality_traits,
-            communication_style=parent_b.communication_style,
-            topical_focus=parent_a.topical_focus,
-            interaction_policy=parent_b.interaction_policy,
-            goals=goals
+            name=f"Mix{random.randint(10, 99)}",
+            description=description,
         )

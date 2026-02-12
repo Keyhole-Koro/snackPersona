@@ -1,15 +1,14 @@
 """
-Diversity analysis visualizations.
+Diversity analysis visualizations for free-form personas.
 
 Generates:
-  - diversity_heatmap.png     : pairwise genotype distance heatmap (last gen)
-  - trait_radar.png           : radar chart of personality traits (last gen)
-  - attribute_distribution.png: age and trait distributions across generations
+  - diversity_heatmap.png          : pairwise genotype distance heatmap (last gen)
+  - description_wordcloud.png      : word cloud of persona descriptions (last gen)
+  - description_length_dist.png    : description length distribution across generations
 """
 
 import json
 import os
-import math
 from typing import List, Optional
 
 import numpy as np
@@ -95,62 +94,11 @@ def plot_diversity_heatmap(store_dir: str, output_dir: Optional[str] = None) -> 
 
 
 # ------------------------------------------------------------------ #
-#  Radar chart
+#  Description length distribution
 # ------------------------------------------------------------------ #
 
-def plot_trait_radar(store_dir: str, output_dir: Optional[str] = None) -> str:
-    """Radar chart of personality traits for the last generation."""
-    gens = _available_gens(store_dir)
-    if not gens:
-        return ""
-    personas = _load_generation(store_dir, gens[-1])
-    if not personas:
-        return ""
-
-    # Collect all trait keys
-    all_keys = sorted({k for p in personas for k in p.personality_traits})
-    if not all_keys:
-        return ""
-
-    n_traits = len(all_keys)
-    angles = [i / n_traits * 2 * math.pi for i in range(n_traits)]
-    angles += angles[:1]  # close polygon
-
-    out = output_dir or os.path.join(store_dir, "plots")
-    os.makedirs(out, exist_ok=True)
-
-    fig, ax = plt.subplots(figsize=(8, 8), subplot_kw=dict(polar=True))
-
-    cmap = cm.get_cmap("Set2", len(personas))
-
-    for idx, persona in enumerate(personas):
-        values = [persona.personality_traits.get(k, 0) for k in all_keys]
-        values += values[:1]
-        ax.plot(angles, values, "o-", label=persona.name,
-                color=cmap(idx), linewidth=1.5)
-        ax.fill(angles, values, alpha=0.1, color=cmap(idx))
-
-    ax.set_xticks(angles[:-1])
-    ax.set_xticklabels(all_keys, fontsize=9)
-    ax.set_ylim(0, 1)
-    ax.set_title(f"Personality Traits (Gen {gens[-1]})", fontsize=14,
-                 fontweight="bold", pad=20)
-    ax.legend(loc="upper right", bbox_to_anchor=(1.3, 1.1), fontsize=8)
-    fig.tight_layout()
-
-    path = os.path.join(out, "trait_radar.png")
-    fig.savefig(path, dpi=150)
-    plt.close(fig)
-    logger.info(f"Saved trait radar → {path}")
-    return path
-
-
-# ------------------------------------------------------------------ #
-#  Attribute distributions over generations
-# ------------------------------------------------------------------ #
-
-def plot_attribute_distribution(store_dir: str, output_dir: Optional[str] = None) -> str:
-    """Age and mean trait distributions across generations."""
+def plot_description_length(store_dir: str, output_dir: Optional[str] = None) -> str:
+    """Description character-length distribution across generations."""
     gens = _available_gens(store_dir)
     if len(gens) < 2:
         return ""
@@ -158,50 +106,69 @@ def plot_attribute_distribution(store_dir: str, output_dir: Optional[str] = None
     out = output_dir or os.path.join(store_dir, "plots")
     os.makedirs(out, exist_ok=True)
 
-    ages_by_gen = {}
-    mean_trait_by_gen = {}
-
+    lengths_by_gen = {}
     for g in gens:
         personas = _load_generation(store_dir, g)
         if not personas:
             continue
-        ages_by_gen[g] = [p.age for p in personas]
-        trait_means = []
-        for p in personas:
-            if p.personality_traits:
-                trait_means.append(
-                    sum(p.personality_traits.values()) / len(p.personality_traits)
-                )
-        mean_trait_by_gen[g] = trait_means
+        lengths_by_gen[g] = [len(p.description) for p in personas]
 
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-
-    # Age box plot
-    ax1 = axes[0]
-    data_ages = [ages_by_gen.get(g, []) for g in gens]
-    bp1 = ax1.boxplot(data_ages, labels=[f"Gen {g}" for g in gens], patch_artist=True)
-    for patch in bp1["boxes"]:
+    fig, ax = plt.subplots(figsize=(10, 5))
+    data = [lengths_by_gen.get(g, []) for g in gens]
+    bp = ax.boxplot(data, labels=[f"Gen {g}" for g in gens], patch_artist=True)
+    for patch in bp["boxes"]:
         patch.set_facecolor("#90CAF9")
-    ax1.set_title("Age Distribution", fontsize=13, fontweight="bold")
-    ax1.set_ylabel("Age")
-    ax1.grid(True, alpha=0.3)
-
-    # Mean trait box plot
-    ax2 = axes[1]
-    data_traits = [mean_trait_by_gen.get(g, []) for g in gens]
-    bp2 = ax2.boxplot(data_traits, labels=[f"Gen {g}" for g in gens], patch_artist=True)
-    for patch in bp2["boxes"]:
-        patch.set_facecolor("#A5D6A7")
-    ax2.set_title("Mean Personality Trait", fontsize=13, fontweight="bold")
-    ax2.set_ylabel("Mean Trait Value (0–1)")
-    ax2.set_ylim(0, 1)
-    ax2.grid(True, alpha=0.3)
-
-    fig.suptitle("Attribute Distributions Across Generations", fontsize=14, fontweight="bold")
+    ax.set_title("Persona Description Length", fontsize=13, fontweight="bold")
+    ax.set_ylabel("Characters")
+    ax.grid(True, alpha=0.3)
     fig.tight_layout()
 
-    path = os.path.join(out, "attribute_distribution.png")
+    path = os.path.join(out, "description_length_dist.png")
     fig.savefig(path, dpi=150)
     plt.close(fig)
-    logger.info(f"Saved attribute distribution → {path}")
+    logger.info(f"Saved description length plot → {path}")
     return path
+
+
+# ------------------------------------------------------------------ #
+#  Word cloud (optional — requires wordcloud library)
+# ------------------------------------------------------------------ #
+
+def plot_description_wordcloud(store_dir: str, output_dir: Optional[str] = None) -> str:
+    """Word cloud of persona descriptions from the last generation."""
+    try:
+        from wordcloud import WordCloud
+    except ImportError:
+        logger.debug("wordcloud library not installed, skipping word cloud")
+        return ""
+
+    gens = _available_gens(store_dir)
+    if not gens:
+        return ""
+    personas = _load_generation(store_dir, gens[-1])
+    if not personas:
+        return ""
+
+    text = " ".join(p.description for p in personas)
+
+    out = output_dir or os.path.join(store_dir, "plots")
+    os.makedirs(out, exist_ok=True)
+
+    wc = WordCloud(width=800, height=400, background_color="white").generate(text)
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ax.imshow(wc, interpolation="bilinear")
+    ax.axis("off")
+    ax.set_title(f"Persona Descriptions (Gen {gens[-1]})", fontsize=14, fontweight="bold")
+    fig.tight_layout()
+
+    path = os.path.join(out, "description_wordcloud.png")
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    logger.info(f"Saved description word cloud → {path}")
+    return path
+
+
+# Keep backward compatibility for report.py
+plot_trait_radar = lambda *a, **kw: ""
+plot_attribute_distribution = lambda *a, **kw: ""

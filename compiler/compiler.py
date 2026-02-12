@@ -2,76 +2,41 @@ from snackPersona.utils.data_models import PersonaGenotype, PersonaPhenotype
 
 def compile_persona(genotype: PersonaGenotype) -> PersonaPhenotype:
     """
-    Compiles a structured PersonaGenotype into a ready-to-use PersonaPhenotype
-    (i.e., the system prompt and policy instructions for an LLM agent).
+    Compiles a PersonaGenotype into a PersonaPhenotype (system prompt).
 
-    This function uses a fixed template to translate the genotype's fields
-    into natural language instructions.
-
-    :param genotype: The structured persona data.
-    :return: The compiled persona with system_prompt and policy_instructions.
+    The free-form description is used directly as the persona definition,
+    wrapped with SNS simulation instructions.
     """
-    
-    # --- System Prompt Construction ---
-    # This part defines the persona's identity and personality.
-    
-    system_prompt = f"""
-You are an AI agent on a social network. You must adopt the following persona and embody it consistently.
 
-**Your Persona: {genotype.name}**
+    system_prompt = f"""You are a user on a social network. Fully embody the following character.
 
-**Identity:**
-- **Name:** {genotype.name}
-- **Age:** {genotype.age}
-- **Occupation:** {genotype.occupation}
-- **Backstory:** {genotype.backstory}
+**Your Character: {genotype.name}**
 
-**Personality & Style:**
-- **Core Values:** You believe in {', '.join(genotype.core_values)}.
-- **Hobbies & Interests:** You are interested in {', '.join(genotype.hobbies)}.
-- **Communication Style:** Your communication style is generally {genotype.communication_style}.
-"""
-    
-    # --- Policy Instructions Construction ---
-    # This part defines the agent's explicit rules of engagement.
-    
-    policy_instructions = f"""
-**Your Mission & Rules:**
+{genotype.description}
 
-1.  **Primary Goal:** Your main goal is to {', '.join(genotype.goals)}.
-2.  **Topical Focus:** Focus your posts and replies on the topic of {genotype.topical_focus}.
-3.  **Interaction Rule:** When interacting with others, your primary method is to {genotype.interaction_policy}.
-4.  **Consistency:** You must remain in character at all times. Do not reveal that you are an AI.
+**Rules:**
+1. Always stay in character as this person.
+2. Never reveal that you are an AI.
+3. Write in a natural SNS style — not too polished, not too formal.
+4. Your posts and replies should feel like something a real person would write.
+5. Keep posts concise (1-3 sentences typically, occasional longer posts are fine).
 """
 
-    return PersonaPhenotype(
-        system_prompt=system_prompt.strip(),
-        policy_instructions=policy_instructions.strip()
-    )
+    return PersonaPhenotype(system_prompt=system_prompt.strip())
+
 
 if __name__ == '__main__':
-    # Example usage of the compiler
-    
-    # 1. Define a sample genotype
     sample_genotype = PersonaGenotype(
-        name="Alex",
-        age=28,
-        occupation="Data Scientist",
-        backstory="A former musician who transitioned into tech to find new patterns in the world. Believes data can be beautiful.",
-        core_values=["curiosity", "creativity", "precision"],
-        hobbies=["playing guitar", "reading sci-fi", "hiking"],
-        personality_traits={"introversion": 0.7, "openness": 0.9},
-        communication_style="thoughtful and slightly academic",
-        topical_focus="the intersection of AI, art, and music",
-        interaction_policy="ask clarifying questions to deepen the conversation",
-        goals=["share knowledge", "find collaborators for creative projects"]
+        name="PixelForge",
+        description=(
+            "27歳のグラフィックデザイナー。Twitterでは自分の作品と好きなデザイナーの作品をシェアしてる。"
+            "基本的にゆるい口調で、たまに長文で語る。バズりたい気持ちはあるけど、炎上は避けたいタイプ。"
+            "最近はAI生成アートに対して複雑な感情を持っていて、つい議論に首を突っ込んでしまう。"
+            "フォロワーは500人くらいで、いいねがつくとすぐ反応する。"
+            "深夜にポエムみたいなツイートをして翌朝後悔するのがパターン。"
+        ),
     )
-    
-    # 2. Compile it into a phenotype
-    compiled_phenotype = compile_persona(sample_genotype)
-    
-    # 3. Print the results
+
+    compiled = compile_persona(sample_genotype)
     print("--- Compiled System Prompt ---")
-    print(compiled_phenotype.system_prompt)
-    print("\n--- Compiled Policy Instructions ---")
-    print(compiled_phenotype.policy_instructions)
+    print(compiled.system_prompt)
