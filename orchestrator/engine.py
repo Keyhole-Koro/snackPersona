@@ -18,7 +18,7 @@ from snackPersona.evaluation.evaluator import Evaluator
 from snackPersona.evaluation.diversity import DiversityEvaluator
 from snackPersona.orchestrator.operators import MutationOperator, CrossoverOperator
 from snackPersona.persona_store.store import PersonaStore
-from snackPersona.llm.llm_client import LLMClient
+from snackLLMClient.llm_client import LLMClient
 from snackPersona.compiler.compiler import compile_persona
 from snackPersona.utils.media_dataset import MediaDataset
 from snackPersona.utils.logger import logger, EvolutionLogger

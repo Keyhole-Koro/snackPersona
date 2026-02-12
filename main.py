@@ -25,7 +25,7 @@ import sys
 from typing import List, Optional, Dict
 
 from snackPersona.utils.data_models import PersonaGenotype
-from snackPersona.llm.llm_factory import create_llm_client, list_presets
+from snackLLMClient.llm_factory import create_llm_client, list_presets
 from snackPersona.persona_store.store import PersonaStore
 from snackPersona.evaluation.evaluator import LLMEvaluator
 from snackPersona.orchestrator.operators import LLMMutator, LLMCrossover

@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 import random
 import json
 from snackPersona.utils.data_models import PersonaGenotype
-from snackPersona.llm.llm_client import LLMClient
+from snackLLMClient.llm_client import LLMClient
 from snackPersona.utils.logger import logger
 
 

@@ -4,7 +4,7 @@ SimulationAgent — wraps a persona genotype + LLM client for SNS simulation.
 import random
 from typing import Optional
 from snackPersona.utils.data_models import PersonaGenotype, MediaItem
-from snackPersona.llm.llm_client import LLMClient
+from snackLLMClient.llm_client import LLMClient
 from snackPersona.compiler.compiler import compile_persona
 from snackPersona.utils.logger import logger
 

@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import List, Dict
 import json
 from snackPersona.utils.data_models import FitnessScores, PersonaGenotype
-from snackPersona.llm.llm_client import LLMClient
+from snackLLMClient.llm_client import LLMClient
 from snackPersona.evaluation.diversity import DiversityEvaluator
 
 
