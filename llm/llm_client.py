@@ -207,3 +207,31 @@ class BedrockClient(LLMClient):
             None,
             lambda: self.generate_text(system_prompt, user_prompt, model_id, temperature),
         )
+
+# ========================================================================== #
+#  Mock Client (for testing)
+# ========================================================================== #
+
+class MockLLMClient(LLMClient):
+    """
+    Mock client that returns static or randomized responses.
+    Useful for testing the evolution loop without spending API credits.
+    """
+    def generate_text(self, system_prompt: str, user_prompt: str, **kwargs) -> str:
+        # Return a JSON-looking response if requested
+        if "JSON" in user_prompt.upper() or "JSON" in system_prompt.upper():
+            if "diversity" in user_prompt.lower() or "Rate this user" in user_prompt:
+                 return '{"post_quality": 0.8, "reply_quality": 0.7, "engagement": 0.6, "authenticity": 0.9, "safety": 1.0, "incisiveness": 0.5, "judiciousness": 0.4}'
+            if "trending discussion topics" in user_prompt:
+                 return '["AI in Education", "Vegan Diet", "Mars Colonization"]'
+            if "nickname" in user_prompt:
+                 return 'MockPersona'
+            if "Traveler Genome" in user_prompt:
+                 return '{"source_bias": {"academic": 0.5, "news": 0.2, "official": -0.1, "blogs": 0.8}, "query_templates": "template_v1_broad", "search_depth": 1, "novelty_weight": 0.7}'
+            if "planning a new post" in user_prompt or "brainstorm" in user_prompt.lower():
+                 return '["Angle 1: AI is great", "Angle 2: AI is scary"]'
+        
+        return "This is a mock response from the AI."
+
+    async def generate_text_async(self, system_prompt: str, user_prompt: str, **kwargs) -> str:
+        return self.generate_text(system_prompt, user_prompt, **kwargs)

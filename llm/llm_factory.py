@@ -79,6 +79,10 @@ def create_llm_client(
     elif backend == "openai":
         return OpenAIClient(model=model, rate_limiter=rate_limiter)
 
+    elif backend == "mock":
+        from snackPersona.llm.llm_client import MockLLMClient
+        return MockLLMClient()
+
     elif backend == "bedrock":
         return BedrockClient(model=model, rate_limiter=rate_limiter)
 

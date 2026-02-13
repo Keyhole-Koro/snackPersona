@@ -52,5 +52,14 @@
             "requests_per_minute": 30,
             "tokens_per_minute": 100000
         }
+    },
+    "mock": {
+        "backend": "mock",
+        "model": "mock-model",
+        "description": "Mock AI — returns static responses for testing",
+        "rate_limit": {
+            "requests_per_minute": 1000,
+            "tokens_per_minute": 1000000
+        }
     }
 }

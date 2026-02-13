@@ -1,6 +1,7 @@
 import random
 import time
 from typing import List, Dict
+from snackPersona.utils.logger import logger
 
 from snackPersona.traveler.utils.data_models import TravelerGenome, ExecutionResult
 from snackPersona.traveler.executor.browser import SearchClient, WebCrawler
@@ -11,8 +12,9 @@ class Traveler:
     """
     Real web traveler executor using a hybrid strategy (Search + Crawl).
     """
-    def __init__(self, genome: TravelerGenome, memory: SourceMemory = None):
+    def __init__(self, genome: TravelerGenome, memory: SourceMemory = None, global_domain_counts: Dict[str, int] = None):
         self.genome = genome
+        self.global_domain_counts = global_domain_counts or {}
         
         # Try SerpApi first, fall back to scraping
         from snackPersona.traveler.executor.browser import SerpApiClient
@@ -38,7 +40,6 @@ class Traveler:
         query = self._generate_query()
         
         # 2. Seed Search
-        # print(f"Searching for: {query}")
         seed_urls = self.search_client.search(query)
         
         # 3. Hybrid Selection & Crawling
@@ -177,6 +178,22 @@ class Traveler:
             except:
                 pass
         
+        # Global diversity penalty (Novelty feedback)
+        if self.global_domain_counts:
+            from urllib.parse import urlparse
+            try:
+                domain = urlparse(url).netloc
+                global_count = self.global_domain_counts.get(domain, 0)
+                if global_count > 0:
+                    # Penalize based on total frequency across all personas.
+                    # Higher global_count = larger penalty.
+                    # Simple log-based penalty or inverse sqrt.
+                    import math
+                    penalty = 0.1 * math.log(global_count + 1)
+                    score -= min(penalty, 0.4) # Cap penalty at 0.4
+            except:
+                pass
+
         # Novelty weight influence
         if self.genome.novelty_weight > 0.7:
              score += random.uniform(-0.2, 0.2)

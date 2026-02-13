@@ -6,7 +6,8 @@ from typing import Optional
 from snackPersona.utils.data_models import PersonaGenotype, MediaItem
 from snackPersona.llm.llm_client import LLMClient
 from snackPersona.compiler.compiler import compile_persona
-from snackPersona.utils.logger import logger
+import logging
+logger = logging.getLogger("snackPersona")
 # Traveler Integration
 from snackPersona.traveler.executor.traveler import Traveler
 from snackPersona.traveler.utils.data_models import ExecutionResult
@@ -22,6 +23,7 @@ class SimulationAgent:
         self.phenotype = compile_persona(genotype)
         self._system_prompt = self.phenotype.system_prompt
         self.memory: list = []
+        self.last_research_result: Optional[ExecutionResult] = None
 
     def reset_memory(self):
         """Clear the agent's short-term memory."""
@@ -85,6 +87,7 @@ class SimulationAgent:
                 
                 # NOTE: In a future iteration, we should pass 'topic' to traveler.
                 result = self.traveler.execute() 
+                self.last_research_result = result
                 
                 if result and result.headlines:
                     headlines_str = "\n".join([f"- {h}" for h in result.headlines[:3]])
@@ -233,6 +236,7 @@ class SimulationAgent:
                 # result = await asyncio.to_thread(self.traveler.execute) # Efficient way
                 import asyncio
                 result = await asyncio.to_thread(self.traveler.execute)
+                self.last_research_result = result
                 
                 if result and result.headlines:
                     headlines_str = "\n".join([f"- {h}" for h in result.headlines[:3]])

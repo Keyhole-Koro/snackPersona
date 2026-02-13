@@ -40,7 +40,6 @@ def create_seed_population() -> List[PersonaGenotype]:
     Uses free-form bio text in a narrative, human style.
     """
     return [
-    return [
         PersonaGenotype(
             name="Alice_Wanders",
             bio="I used to be a corporate lawyer in Chicago, billing 80 hours a week and convincing myself I loved the grind. Then I had a panic attack in a Sweetgreen and bought a one-way ticket to a coastal town in Oregon. Now I paint bad watercolors of the ocean, drink too much cheap wine, and complain about the humidity. I miss the paycheck, but I don't miss the meetings. I'm just here to find people who understand why I left."
@@ -198,6 +197,9 @@ async def async_main():
     crossover_op = LLMCrossover(llm_client)
 
     # 4. Initialize Engine
+    from snackWeb.backend.db.database import SessionLocal, init_db
+    init_db() # Ensure tables (including new url_visit) are created
+    
     engine = EvolutionEngine(
         llm_client=llm_client,
         store=store,
@@ -209,6 +211,7 @@ async def async_main():
         elite_count=max(1, args.pop_size // 4),
         media_dataset=media_dataset,
         config=config,
+        db_session_factory=SessionLocal,
     )
 
     # 5. Load or Initialize Population

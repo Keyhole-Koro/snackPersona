@@ -28,6 +28,10 @@ from snackPersona.utils.logger import logger, EvolutionLogger
 from snackPersona.integration.adapter import PersonaToTravelerAdapter
 from snackPersona.traveler.executor.traveler import Traveler
 
+# Repository Integration
+from snackWeb.backend.db.repository import record_url_visit, get_domain_visit_counts
+from urllib.parse import urlparse
+
 
 # Default config — overridden by JSON config if provided
 DEFAULT_CONFIG = {
@@ -80,6 +84,7 @@ class EvolutionEngine:
         elite_count: int = 2,
         media_dataset: Optional[MediaDataset] = None,
         config: Optional[Dict] = None,
+        db_session_factory = None, # Optional SQLAlchemy sessionmaker
     ):
         self.llm_client = llm_client
         self.store = store
@@ -90,6 +95,7 @@ class EvolutionEngine:
         self.generations = generations
         self.elite_count = elite_count
         self.media_dataset = media_dataset
+        self.db_session_factory = db_session_factory
 
         # Merge user config with defaults
         self.config = {**DEFAULT_CONFIG, **(config or {})}
@@ -261,6 +267,12 @@ class EvolutionEngine:
         # Generate topics for this generation via LLM
         episode_topics = await self._generate_topics_async()
 
+        # Fetch global domain visit counts if DB is available
+        global_domain_counts = {}
+        if self.db_session_factory:
+            with self.db_session_factory() as session:
+                global_domain_counts = get_domain_visit_counts(session)
+
         indices = list(range(len(self.population)))
         random.shuffle(indices)
 
@@ -276,10 +288,9 @@ class EvolutionEngine:
                 # 1. Adapt Genotype -> TravelerGenome
                 traveler_genome = self.adapter.adapt(ind.genotype)
                 
-                # 2. Create Traveler (using empty memory for now, or could persist source memory)
-                # Ideally we want a shared memory, but let's stick to per-agent ephemeral for now or pass a shared SourceMemory?
-                # For simplicity, stateless traveler execution per agent.
-                traveler = Traveler(traveler_genome)
+                # 2. Create Traveler
+                # Pass global_domain_counts to influence diversity
+                traveler = Traveler(traveler_genome, global_domain_counts=global_domain_counts)
                 
                 # 3. Create Agent with Traveler
                 agent = SimulationAgent(ind.genotype, self.llm_client, traveler=traveler)
@@ -310,13 +321,44 @@ class EvolutionEngine:
                     event_type=event.get('type', 'UNKNOWN').upper(),
                     agent_name=event.get('author', 'System'),
                     content=event.get('content', ''),
-                    related_to=event.get('target', None), # Assuming target is stored in event
+                    related_to=event.get('target', None),
                     metadata={"topic": topic, "group_id": i}
                 )
 
+            # Post-episode processing (DB recording)
+            if self.db_session_factory:
+                with self.db_session_factory() as session:
+                    # Get persona ID from DB by name
+                    from snackWeb.backend.db.repository import get_persona_by_name, upsert_persona
+                    from snackWeb.backend.db.models import PersonaRow
+                    for agent in sim_agents:
+                        # Ensure persona exists in DB
+                        p = upsert_persona(session, name=agent.genotype.name, bio=agent.genotype.bio)
+                        
+                        # Record all URLs visited during research (Traveler execution)
+                        if agent.last_research_result:
+                            p = upsert_persona(session, name=agent.genotype.name, bio=agent.genotype.bio)
+                            if p:
+                                for url in agent.last_research_result.retrieved_urls:
+                                    try:
+                                        domain = urlparse(url).netloc
+                                        if domain:
+                                            record_url_visit(session, url=url, domain=domain, persona_id=p.id)
+                                    except:
+                                        pass
+
             # Evaluate
             for ind in group_individuals:
-                scores = self.evaluator.evaluate(ind.genotype, transcript)
+                # Find matching agent for research results
+                agent = next((a for a in sim_agents if a.genotype.name == ind.genotype.name), None)
+                research_res = agent.last_research_result if agent else None
+
+                scores = self.evaluator.evaluate(
+                    ind.genotype, 
+                    transcript,
+                    global_domain_counts=global_domain_counts,
+                    research_result=research_res
+                )
                 
                 # Evaluate bio quality separately
                 scores.bio_quality = self.bio_evaluator.evaluate_bio(ind.genotype)

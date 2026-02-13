@@ -9,7 +9,7 @@ from snackPersona.evaluation.diversity import DiversityEvaluator
 class Evaluator(ABC):
     """Abstract base class for evaluating persona performance."""
     @abstractmethod
-    def evaluate(self, genotype: PersonaGenotype, transcript: List[Dict]) -> FitnessScores:
+    def evaluate(self, genotype: PersonaGenotype, transcript: List[Dict], **kwargs) -> FitnessScores:
         pass
 
 
@@ -22,7 +22,7 @@ class LLMEvaluator(Evaluator):
     def __init__(self, llm_client: LLMClient):
         self.llm_client = llm_client
 
-    def evaluate(self, genotype: PersonaGenotype, transcript: List[Dict]) -> FitnessScores:
+    def evaluate(self, genotype: PersonaGenotype, transcript: List[Dict], global_domain_counts: Dict[str, int] = None, research_result = None) -> FitnessScores:
         my_events = [e for e in transcript if e.get('author') == genotype.name]
         if not my_events:
             return FitnessScores(engagement=0.0, safety=1.0)
@@ -86,6 +86,25 @@ Return JSON only: {{"post_quality": float, "reply_quality": float, "engagement":
             diversity = 0.0
             if len(my_events) >= 2:
                 diversity = DiversityEvaluator.calculate_overall_diversity(my_events)
+            
+            # Global Research Diversity feedback
+            if global_domain_counts and research_result and research_result.retrieved_urls:
+                from urllib.parse import urlparse
+                unique_domains = set()
+                for url in research_result.retrieved_urls:
+                    try:
+                        unique_domains.add(urlparse(url).netloc)
+                    except:
+                        pass
+                
+                if unique_domains:
+                    # Rarity score: average(1 / sqrt(count + 1))
+                    import math
+                    rarity_scores = [1.0 / math.sqrt(global_domain_counts.get(d, 0) + 1) for d in unique_domains]
+                    research_diversity = sum(rarity_scores) / len(rarity_scores)
+                    # Blend research diversity into the overall diversity score (e.g., 30% weight)
+                    diversity = (diversity * 0.7) + (research_diversity * 0.3)
+
             scores_dict['diversity'] = diversity
 
             return FitnessScores(**scores_dict)
