@@ -39,7 +39,23 @@ class EvolutionLogger:
     def __init__(self, store_dir: str):
         self.store_dir = store_dir
         self.stats_path = os.path.join(store_dir, "generation_stats.jsonl")
+        self.events_path = os.path.join(store_dir, "simulation_events.jsonl")
         os.makedirs(store_dir, exist_ok=True)
+
+    def log_timeline_event(self, event_type: str, agent_name: str, content: str, related_to: Optional[str] = None, metadata: Optional[Dict] = None):
+        """
+        Log a timeline event (Post, Reply, Reaction) to JSONL for the Web UI.
+        """
+        record = {
+            "timestamp": datetime.now().isoformat(),
+            "event_type": event_type, # POST, REPLY, REACTION
+            "agent_name": agent_name,
+            "content": content,
+            "related_to": related_to, # ID or Name of target
+            "metadata": metadata or {}
+        }
+        with open(self.events_path, "a") as f:
+            f.write(json.dumps(record) + "\n")
 
     def log_generation(
         self,

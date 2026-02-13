@@ -303,6 +303,16 @@ class EvolutionEngine:
 
             # Save transcript for this group
             all_transcripts.append(transcript)
+            
+            # Log timeline events for Web UI
+            for event in transcript:
+                self.evo_logger.log_timeline_event(
+                    event_type=event.get('type', 'UNKNOWN').upper(),
+                    agent_name=event.get('author', 'System'),
+                    content=event.get('content', ''),
+                    related_to=event.get('target', None), # Assuming target is stored in event
+                    metadata={"topic": topic, "group_id": i}
+                )
 
             # Evaluate
             for ind in group_individuals:
@@ -372,7 +382,7 @@ class EvolutionEngine:
     def _generate_nickname(self, genotype: PersonaGenotype) -> PersonaGenotype:
         """Ask the LLM to create a creative nickname based on persona description."""
         # Truncate description to avoid overly long prompts
-        desc_preview = genotype.description[:300]
+        desc_preview = genotype.bio[:300]
         user_prompt = (
             f"Create a short, creative social-media nickname (one word, no spaces, "
             f"no special characters) for this person:\n"
