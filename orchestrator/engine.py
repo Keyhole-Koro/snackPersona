@@ -9,6 +9,8 @@ Supports both synchronous and asynchronous execution.
 import asyncio
 import json
 import random
+import uuid
+from datetime import datetime
 from typing import List, Optional, Dict
 
 from snackPersona.utils.data_models import PersonaGenotype, Individual, MediaItem
@@ -18,7 +20,7 @@ from snackPersona.evaluation.evaluator import Evaluator
 from snackPersona.evaluation.bio_evaluator import BioStyleEvaluator
 from snackPersona.evaluation.diversity import DiversityEvaluator
 from snackPersona.orchestrator.operators import MutationOperator, CrossoverOperator
-from snackPersona.persona_store.store import PersonaStore
+from snackPersona.persona_store.dynamo_store import DynamoDBStore
 from snackPersona.llm.llm_client import LLMClient
 from snackPersona.compiler.compiler import compile_persona
 from snackPersona.utils.media_dataset import MediaDataset
@@ -28,8 +30,8 @@ from snackPersona.utils.logger import logger, EvolutionLogger
 from snackPersona.integration.adapter import PersonaToTravelerAdapter
 from snackPersona.traveler.executor.traveler import Traveler
 
-# Repository Integration
-from snackWeb.backend.db.repository import record_url_visit, get_domain_visit_counts
+# Repository Integration - Removed SQL
+# from snackWeb.backend.db.repository import record_url_visit, get_domain_visit_counts
 from urllib.parse import urlparse
 
 
@@ -75,7 +77,7 @@ class EvolutionEngine:
     def __init__(
         self,
         llm_client: LLMClient,
-        store: PersonaStore,
+        store: DynamoDBStore,
         evaluator: Evaluator,
         mutation_op: MutationOperator,
         crossover_op: CrossoverOperator,
@@ -84,7 +86,7 @@ class EvolutionEngine:
         elite_count: int = 2,
         media_dataset: Optional[MediaDataset] = None,
         config: Optional[Dict] = None,
-        db_session_factory = None, # Optional SQLAlchemy sessionmaker
+        db_session_factory = None, # Deprecated, ignored
     ):
         self.llm_client = llm_client
         self.store = store
@@ -95,7 +97,7 @@ class EvolutionEngine:
         self.generations = generations
         self.elite_count = elite_count
         self.media_dataset = media_dataset
-        self.db_session_factory = db_session_factory
+        # self.db_session_factory = db_session_factory # Removed
 
         # Merge user config with defaults
         self.config = {**DEFAULT_CONFIG, **(config or {})}
@@ -201,7 +203,16 @@ class EvolutionEngine:
             self._apply_fitness_sharing()
 
             # 3. Log & Save
-            self.store.save_generation(gen, [ind.genotype for ind in self.population])
+            # Calculate stats
+            fitnesses = [self._raw_fitness(ind) for ind in self.population]
+            fitness_mean = sum(fitnesses) / max(len(fitnesses), 1)
+            
+            stats = {
+                'diversity': pop_diversity,
+                'fitness_mean': fitness_mean,
+            }
+            
+            self.store.save_generation(gen, [ind.genotype for ind in self.population], stats=stats)
             self.store.save_transcripts(gen, gen_transcripts)
             self.evo_logger.log_generation(
                 generation=gen,
@@ -254,24 +265,15 @@ class EvolutionEngine:
         return list(_FALLBACK_TOPICS)
 
     async def _evaluate_population_async(self):
-        """Runs simulation episodes and assigns fitness scores.
-
-        Returns
-        -------
-        tuple[float, list]
-            Population diversity score and list of transcripts (one per group).
-        """
+        """Runs simulation episodes and assigns fitness scores."""
         group_size = self.sim_config.get("group_size", 4)
         reply_rounds = self.sim_config.get("reply_rounds", 3)
 
         # Generate topics for this generation via LLM
         episode_topics = await self._generate_topics_async()
 
-        # Fetch global domain visit counts if DB is available
+        # Fetch global domain visit counts if DB is available (Skipped for DynamoDB for now)
         global_domain_counts = {}
-        if self.db_session_factory:
-            with self.db_session_factory() as session:
-                global_domain_counts = get_domain_visit_counts(session)
 
         indices = list(range(len(self.population)))
         random.shuffle(indices)
@@ -315,6 +317,9 @@ class EvolutionEngine:
             # Save transcript for this group
             all_transcripts.append(transcript)
             
+            # DB Persistence (DynamoDB)
+            self._save_transcript_to_db(transcript, topic)
+
             # Log timeline events for Web UI
             for event in transcript:
                 self.evo_logger.log_timeline_event(
@@ -324,28 +329,6 @@ class EvolutionEngine:
                     related_to=event.get('target', None),
                     metadata={"topic": topic, "group_id": i}
                 )
-
-            # Post-episode processing (DB recording)
-            if self.db_session_factory:
-                with self.db_session_factory() as session:
-                    # Get persona ID from DB by name
-                    from snackWeb.backend.db.repository import get_persona_by_name, upsert_persona
-                    from snackWeb.backend.db.models import PersonaRow
-                    for agent in sim_agents:
-                        # Ensure persona exists in DB
-                        p = upsert_persona(session, name=agent.genotype.name, bio=agent.genotype.bio)
-                        
-                        # Record all URLs visited during research (Traveler execution)
-                        if agent.last_research_result:
-                            p = upsert_persona(session, name=agent.genotype.name, bio=agent.genotype.bio)
-                            if p:
-                                for url in agent.last_research_result.retrieved_urls:
-                                    try:
-                                        domain = urlparse(url).netloc
-                                        if domain:
-                                            record_url_visit(session, url=url, domain=domain, persona_id=p.id)
-                                    except:
-                                        pass
 
             # Evaluate
             for ind in group_individuals:
@@ -374,6 +357,68 @@ class EvolutionEngine:
 
         pop_diversity = DiversityEvaluator.calculate_population_diversity(all_agent_posts)
         return pop_diversity, all_transcripts
+
+    def _save_transcript_to_db(self, transcript: List[Dict], topic: str):
+        """Saves transcript events (Posts/Replies) to DynamoDB."""
+        # This is a rudimentary conversion.
+        # We need to maintain a thread context.
+        last_post_id = None
+        
+        # Batch write logic should be in store, but iterating here
+        # We'll use store's table directly or add method to store?
+        # Let's add directly using table from store
+        
+        try:
+            with self.store.table.batch_writer() as batch:
+                for event in transcript:
+                    etype = event.get('type')
+                    author = event.get('author')
+                    content = event.get('content')
+                    
+                    if not author or not content:
+                        continue
+                        
+                    timestamp = event.get('timestamp') or datetime.now().isoformat()
+                    
+                    if etype == 'post' or etype == 'message':
+                        # New Post
+                        pid = str(uuid.uuid4())
+                        last_post_id = pid
+                        
+                        item = {
+                            'PK': f"POST#{pid}",
+                            'SK': 'POST',
+                            'GSI1PK': 'POST',
+                            'GSI1SK': timestamp,
+                            'id': pid,
+                            'content': content,
+                            'agent_name': author,
+                            'topic': topic,
+                            'event_type': 'post',
+                            'created_at': timestamp,
+                            # 'persona_id': author # using name as ID
+                        }
+                        batch.put_item(Item=item)
+                        
+                    elif etype == 'reply':
+                        # Reply to last post (or target if we track it)
+                        # For simple simulation, assume linear reply to current thread
+                        if last_post_id:
+                            rid = str(uuid.uuid4())
+                            item = {
+                                'PK': f"POST#{last_post_id}",
+                                'SK': f"REPLY#{timestamp}",
+                                'id': rid,
+                                'post_id': last_post_id,
+                                'content': content,
+                                'agent_name': author,
+                                'event_type': 'reply',
+                                'created_at': timestamp
+                            }
+                            batch.put_item(Item=item)
+                            
+        except Exception as e:
+            logger.error(f"Failed to save transcript to DB: {e}")
 
     # ------------------------------------------------------------------ #
     #  Reproduction

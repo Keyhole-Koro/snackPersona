@@ -43,5 +43,10 @@
             "requests_per_minute": 30,
             "tokens_per_minute": 100000
         }
+    },
+    "mock": {
+        "backend": "mock",
+        "description": "Mock LLM for testing without API keys",
+        "model": "mock-model"
     }
 }

@@ -7,6 +7,7 @@ Usage examples::
 
     # Gemini Flash
     export GEMINI_API_KEY="..."
+    export DYNAMODB_TABLE="SnackTable" 
     python -m snackPersona.main --llm gemini-flash --generations 5 --pop_size 8
 
     # Generate seed personas via LLM
@@ -26,7 +27,8 @@ from typing import List, Optional, Dict
 
 from snackPersona.utils.data_models import PersonaGenotype
 from snackPersona.llm.llm_factory import create_llm_client, list_presets
-from snackPersona.persona_store.store import PersonaStore
+# from snackPersona.persona_store.store import PersonaStore # Removed
+from snackPersona.persona_store.dynamo_store import DynamoDBStore
 from snackPersona.evaluation.evaluator import LLMEvaluator
 from snackPersona.orchestrator.operators import LLMMutator, LLMCrossover
 from snackPersona.orchestrator.engine import EvolutionEngine
@@ -149,7 +151,7 @@ async def async_main():
     parser.add_argument("--list-presets", action="store_true",
                         help="List available LLM presets and exit")
     parser.add_argument("--store_dir", type=str, default="persona_data",
-                        help="Directory for storing generation data")
+                        help="Directory for storing generation data (Legacy file usage)")
     parser.add_argument("--media_dataset", type=str, default=None,
                         help="Path to JSON file containing media items")
     parser.add_argument("--seed_file", type=str, default=None,
@@ -178,8 +180,8 @@ async def async_main():
     # 2. Load config
     config = load_config(args.config)
 
-    # 3. Setup Components
-    store = PersonaStore(storage_dir=args.store_dir)
+    # 3. Setup Components (DynamoDB Store)
+    store = DynamoDBStore()
 
     # Load media dataset if provided
     media_dataset = None
@@ -197,8 +199,7 @@ async def async_main():
     crossover_op = LLMCrossover(llm_client)
 
     # 4. Initialize Engine
-    from snackWeb.backend.db.database import SessionLocal, init_db
-    init_db() # Ensure tables (including new url_visit) are created
+    # Removed SQL init
     
     engine = EvolutionEngine(
         llm_client=llm_client,
@@ -211,7 +212,6 @@ async def async_main():
         elite_count=max(1, args.pop_size // 4),
         media_dataset=media_dataset,
         config=config,
-        db_session_factory=SessionLocal,
     )
 
     # 5. Load or Initialize Population
@@ -220,10 +220,15 @@ async def async_main():
         last_gen_id = existing_gens[-1]
         logger.info(f"Resuming from generation {last_gen_id}")
         last_gen_pop = store.load_generation(last_gen_id)
-        engine.initialize_population(last_gen_pop)
+        if last_gen_pop:
+            engine.initialize_population(last_gen_pop)
+        else:
+             logger.warning(f"Could not load items for generation {last_gen_id}, restarting.")
+             seeds = None
     else:
         seeds = None
 
+    if not engine.population: # If not loaded from existing
         # Try LLM-generated seeds first
         if args.generate_seeds:
             seeds = await generate_seed_personas_async(llm_client, args.pop_size)
@@ -246,19 +251,15 @@ async def async_main():
     logger.info("Starting Evolution Loop")
     await engine.run_evolution_loop_async()
     logger.info("Evolution Complete!")
-    logger.info(f"Stats saved to {store.storage_dir}/generation_stats.jsonl")
+    # logger.info(f"Stats saved to {store.storage_dir}/generation_stats.jsonl")
 
     # 7. Generate Visualisation Report
+    # Visualization might need updates to read from DynamoDB or skip for now.
     if not args.no_viz:
-        logger.info("Generating visualisation report...")
-        from snackPersona.visualization.report import generate_report
-        plots = generate_report(store.storage_dir)
-        if plots:
-            logger.info(f"Plots saved to {store.storage_dir}/plots/")
-        else:
-            logger.warning("No plots generated (insufficient data)")
-
-
+        logger.info("Visualization skipped in DynamoDB mode (pending implementation)")
+        # from snackPersona.visualization.report import generate_report
+        # plots = generate_report(store.storage_dir) # needs file path
+        
 def main():
     """Sync entry point."""
     asyncio.run(async_main())
