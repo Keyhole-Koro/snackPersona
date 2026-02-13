@@ -15,23 +15,31 @@ from snackPersona.utils.data_models import PersonaGenotype, Individual, MediaIte
 from snackPersona.simulation.agent import SimulationAgent
 from snackPersona.simulation.environment import SimulationEnvironment
 from snackPersona.evaluation.evaluator import Evaluator
+from snackPersona.evaluation.bio_evaluator import BioStyleEvaluator
 from snackPersona.evaluation.diversity import DiversityEvaluator
 from snackPersona.orchestrator.operators import MutationOperator, CrossoverOperator
 from snackPersona.persona_store.store import PersonaStore
-from snackLLMClient.llm_client import LLMClient
+from snackPersona.llm.llm_client import LLMClient
 from snackPersona.compiler.compiler import compile_persona
 from snackPersona.utils.media_dataset import MediaDataset
 from snackPersona.utils.logger import logger, EvolutionLogger
+
+# Traveler Integration
+from snackPersona.integration.adapter import PersonaToTravelerAdapter
+from snackPersona.traveler.executor.traveler import Traveler
 
 
 # Default config — overridden by JSON config if provided
 DEFAULT_CONFIG = {
     "fitness_weights": {
-        "post_quality": 0.25,
-        "reply_quality": 0.25,
-        "engagement": 0.15,
-        "authenticity": 0.20,
+        "post_quality": 0.20,
+        "reply_quality": 0.20,
+        "engagement": 0.10,
+        "authenticity": 0.15,
         "diversity": 0.15,
+        "bio_quality": 0.20,
+        "incisiveness": 0.10, # Moto-mo-ko-mo-nai (Blunt truth)
+        "judiciousness": 0.10, # Smart silence
     },
     "niching": {
         "sigma": 0.5,
@@ -95,6 +103,12 @@ class EvolutionEngine:
 
         # Structured logger
         self.evo_logger = EvolutionLogger(store.storage_dir)
+        
+        # Genotype Evaluator
+        self.bio_evaluator = BioStyleEvaluator(llm_client)
+        
+        # Adapter
+        self.adapter = PersonaToTravelerAdapter(llm_client)
 
     def initialize_population(self, seed_genotypes: List[PersonaGenotype]):
         """
@@ -126,6 +140,9 @@ class EvolutionEngine:
             + w.get('engagement', 0.15) * s.engagement
             + w.get('authenticity', 0.20) * s.authenticity
             + w.get('diversity', 0.15) * s.diversity
+            + w.get('bio_quality', 0.20) * s.bio_quality
+            + w.get('incisiveness', 0.10) * s.incisiveness
+            + w.get('judiciousness', 0.10) * s.judiciousness
         )
 
     def _sharing_function(self, distance: float) -> float:
@@ -254,10 +271,19 @@ class EvolutionEngine:
             group_indices = indices[i: i + group_size]
             group_individuals = [self.population[idx] for idx in group_indices]
 
-            sim_agents = [
-                SimulationAgent(ind.genotype, self.llm_client)
-                for ind in group_individuals
-            ]
+            sim_agents = []
+            for ind in group_individuals:
+                # 1. Adapt Genotype -> TravelerGenome
+                traveler_genome = self.adapter.adapt(ind.genotype)
+                
+                # 2. Create Traveler (using empty memory for now, or could persist source memory)
+                # Ideally we want a shared memory, but let's stick to per-agent ephemeral for now or pass a shared SourceMemory?
+                # For simplicity, stateless traveler execution per agent.
+                traveler = Traveler(traveler_genome)
+                
+                # 3. Create Agent with Traveler
+                agent = SimulationAgent(ind.genotype, self.llm_client, traveler=traveler)
+                sim_agents.append(agent)
             env = SimulationEnvironment(sim_agents)
 
             topic = random.choice(episode_topics)
@@ -281,6 +307,10 @@ class EvolutionEngine:
             # Evaluate
             for ind in group_individuals:
                 scores = self.evaluator.evaluate(ind.genotype, transcript)
+                
+                # Evaluate bio quality separately
+                scores.bio_quality = self.bio_evaluator.evaluate_bio(ind.genotype)
+                
                 ind.scores = scores
 
                 my_posts = [

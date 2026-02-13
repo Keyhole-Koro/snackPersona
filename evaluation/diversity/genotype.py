@@ -10,7 +10,7 @@ def calculate_genotype_distance(g1, g2) -> float:
     """
     Semantic distance between two PersonaGenotype instances.
 
-    Uses sentence embeddings of their descriptions to compute
+    Uses sentence embeddings of their bios to compute
     cosine distance. Falls back to simple string comparison if
     the embedding model is unavailable.
 
@@ -19,7 +19,7 @@ def calculate_genotype_distance(g1, g2) -> float:
     """
     try:
         model = _get_model()
-        embeddings = model.encode([g1.description, g2.description])
+        embeddings = model.encode([g1.bio, g2.bio])
         # Cosine similarity → distance
         from numpy import dot
         from numpy.linalg import norm
@@ -29,9 +29,9 @@ def calculate_genotype_distance(g1, g2) -> float:
         return float(max(0.0, min(1.0, 1.0 - cos_sim)))
     except Exception:
         # Fallback: simple string comparison
-        if g1.description == g2.description:
+        if g1.bio == g2.bio:
             return 0.0
         # Rough character-level similarity
-        common = sum(1 for a, b in zip(g1.description, g2.description) if a == b)
-        max_len = max(len(g1.description), len(g2.description), 1)
+        common = sum(1 for a, b in zip(g1.bio, g2.bio) if a == b)
+        max_len = max(len(g1.bio), len(g2.bio), 1)
         return 1.0 - (common / max_len)

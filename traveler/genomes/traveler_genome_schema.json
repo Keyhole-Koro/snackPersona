@@ -1,0 +1,67 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TravelerGenome",
+  "description": "A set of parameters that defines the exploration strategy of a Traveler agent.",
+  "type": "object",
+  "properties": {
+    "genome_id": {
+      "description": "Unique identifier for this genome.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "query_diversity": {
+      "description": "Controls the randomness of query generation. Maps to temperature/top-p.",
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "query_template_id": {
+      "description": "ID of the prompt template used for query generation.",
+      "type": "string",
+      "enum": [
+        "template_v1_broad",
+        "template_v2_specific",
+        "template_v3_questioning",
+        "template_v4_news_focused"
+      ]
+    },
+    "language_mix": {
+      "description": "Ratio of English queries to generate. 0.0 for Japanese only, 1.0 for English only.",
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "source_bias": {
+      "description": "Bias towards certain types of information sources.",
+      "type": "object",
+      "properties": {
+        "academic": { "type": "number", "minimum": -1.0, "maximum": 1.0 },
+        "news": { "type": "number", "minimum": -1.0, "maximum": 1.0 },
+        "official": { "type": "number", "minimum": -1.0, "maximum": 1.0 },
+        "blogs": { "type": "number", "minimum": -1.0, "maximum": 1.0 }
+      },
+      "required": ["academic", "news", "official", "blogs"]
+    },
+    "search_depth": {
+      "description": "How many steps the agent takes. 1 for initial search, 2 for follow-up search based on results.",
+      "type": "integer",
+      "enum": [1, 2]
+    },
+    "novelty_weight": {
+      "description": "Internal weight for how much to prioritize novelty during result ranking (e.g., in MMR).",
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0
+    }
+  },
+  "required": [
+    "genome_id",
+    "query_diversity",
+    "query_template_id",
+    "language_mix",
+    "source_bias",
+    "search_depth",
+    "novelty_weight"
+  ],
+  "additionalProperties": false
+}

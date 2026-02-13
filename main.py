@@ -25,7 +25,7 @@ import sys
 from typing import List, Optional, Dict
 
 from snackPersona.utils.data_models import PersonaGenotype
-from snackLLMClient.llm_factory import create_llm_client, list_presets
+from snackPersona.llm.llm_factory import create_llm_client, list_presets
 from snackPersona.persona_store.store import PersonaStore
 from snackPersona.evaluation.evaluator import LLMEvaluator
 from snackPersona.orchestrator.operators import LLMMutator, LLMCrossover
@@ -37,68 +37,25 @@ from snackPersona.utils.logger import logger
 def create_seed_population() -> List[PersonaGenotype]:
     """
     Creates a small set of seed personas to start evolution.
-    Now uses the flexible attributes structure.
+    Uses free-form bio text in a narrative, human style.
     """
     return [
+    return [
         PersonaGenotype(
-            name="Alice",
-            attributes={
-                "age": 25,
-                "occupation": "Digital Artist",
-                "backstory": "Always loved drawing, now exploring generative art.",
-                "core_values": ["creativity", "freedom"],
-                "hobbies": ["sketching", "visiting galleries"],
-                "personality_traits": {"openness": 0.9, "neuroticism": 0.4},
-                "communication_style": "enthusiastic and visual",
-                "topical_focus": "digital art trends",
-                "interaction_policy": "compliment others' work",
-                "goals": ["become famous", "inspire others"]
-            }
+            name="Alice_Wanders",
+            bio="I used to be a corporate lawyer in Chicago, billing 80 hours a week and convincing myself I loved the grind. Then I had a panic attack in a Sweetgreen and bought a one-way ticket to a coastal town in Oregon. Now I paint bad watercolors of the ocean, drink too much cheap wine, and complain about the humidity. I miss the paycheck, but I don't miss the meetings. I'm just here to find people who understand why I left."
         ),
         PersonaGenotype(
-            name="Bob",
-            attributes={
-                "age": 35,
-                "occupation": "Software Engineer",
-                "backstory": "Coding since childhood, obsessed with clean code.",
-                "core_values": ["logic", "efficiency"],
-                "hobbies": ["coding", "chess"],
-                "personality_traits": {"conscientiousness": 0.9, "extraversion": 0.2},
-                "communication_style": "concise and technical",
-                "topical_focus": "programming best practices",
-                "interaction_policy": "correct misconceptions",
-                "goals": ["teach others", "find bugs"]
-            }
+            name="Tech_Bro_Bob",
+            bio="Current location: Seoul. Next week: probably Bali. I'm a digital nomad living out of a carry-on, coding backend systems at 3 AM while everyone else parties. I'm obsessed with optimizing every aspect of my life—from my sleep cycle to my coffee grind size. Honestly? It gets lonely. I have a thousand followers but haven't had a real conversation in weeks. Looking for connection in a disconnected world."
         ),
         PersonaGenotype(
-            name="Charlie",
-            attributes={
-                "age": 22,
-                "occupation": "Student",
-                "backstory": "Studying philosophy, questions everything.",
-                "core_values": ["truth", "skepticism"],
-                "hobbies": ["reading", "debating"],
-                "personality_traits": {"openness": 0.8, "agreeableness": 0.4},
-                "communication_style": "inquisitive and verbose",
-                "topical_focus": "ethics of AI",
-                "interaction_policy": "ask deep questions",
-                "goals": ["understand the world", "win debates"]
-            }
+            name="CharlieTheSkeptic",
+            bio="I'm a philosophy Ph.D. candidate who probably reads too much Nietzsche for my own good. I spend my days in dusty libraries questioning the nature of free will and my nights doom-scrolling on this hellsite. I believe AI is probably going to destroy us, yet here I am. I can be intense and argumentative, but deep down, I'm just terrified that nothing actually matters. Let's debate."
         ),
         PersonaGenotype(
-            name="Dana",
-            attributes={
-                "age": 40,
-                "occupation": "Journalist",
-                "backstory": "Investigating the truth behind the headlines.",
-                "core_values": ["integrity", "justice"],
-                "hobbies": ["writing", "travelling"],
-                "personality_traits": {"extraversion": 0.8, "agreeableness": 0.6},
-                "communication_style": "direct and probing",
-                "topical_focus": "current events",
-                "interaction_policy": "interview others",
-                "goals": ["uncover stories", "inform the public"]
-            }
+            name="Dana_Scoops",
+            bio="Investigative journalist for a dying local paper. I've got ink stains on my hands and three cats waiting for me at home. I survive on stale office coffee and the thrill of chasing a lead. I'm cynical about politicians but stubbornly hopeful about communities. If I'm not live-tweeting a city council meeting, I'm probably asleep. I want to tell the stories that actually change things."
         )
     ]
 
@@ -113,11 +70,19 @@ def load_seed_population(path: str) -> List[PersonaGenotype]:
     """Load seed personas from a JSON file."""
     with open(path) as f:
         data = json.load(f)
-    # Handle migration if needed
+    
     personas = []
     for item in data:
-        if 'attributes' not in item and 'description' in item:
-            item['attributes'] = {'description': item.pop('description')}
+        # Backward compatibility / Migration helper
+        if 'attributes' in item and 'bio' not in item:
+            # Simple conversion if we encounter old format
+            attrs = item.pop('attributes')
+            # Create a simple bio from the attributes dump
+            bio_parts = []
+            for k, v in attrs.items():
+                bio_parts.append(f"{k}: {v}")
+            item['bio'] = ". ".join(bio_parts)
+            
         personas.append(PersonaGenotype(**item))
     logger.info(f"Loaded {len(personas)} seed personas from {path}")
     return personas
@@ -126,23 +91,17 @@ def load_seed_population(path: str) -> List[PersonaGenotype]:
 async def generate_seed_personas_async(
     llm_client, count: int
 ) -> Optional[List[PersonaGenotype]]:
-    """Ask the LLM to generate diverse seed personas using flexible attributes."""
+    """Ask the LLM to generate diverse seed personas using free-form bios."""
     system_prompt = "You are an expert character designer for social media simulations."
     user_prompt = f"""Generate exactly {count} diverse, unique social media user personas.
 Each persona must be a JSON object with these fields:
 - name (string): a creative SNS nickname / display name
-- attributes (dictionary): a flexible dictionary containing traits like:
-  - age, occupation, backstory
-  - core_values, hobbies (list)
-  - personality_traits (dict)
-  - communication_style
-  - topical_focus
-  - interaction_policy
-  - goals (list)
+- bio (string): A detailed, first-person narrative (approx 300-400 characters).
+  - Write a micro-story about who they are, where they are in life, and what they care about.
+  - Include specific details: their morning routine, a recent failure, a secret ambition, or a recurring annoyance.
+  - The tone should be raw, authentic, and human. No resume-speak. No bullet points.
 
-Make the personas feel like REAL SNS users — not idealized characters.
-Include a mix of ages, backgrounds, motivations, and posting styles.
-Some should be very active, some lurkers. Some opinionated, some chill.
+Make them feel like main characters in their own lives.
 
 Return ONLY a JSON array of {count} objects. No markdown, no explanation."""
 

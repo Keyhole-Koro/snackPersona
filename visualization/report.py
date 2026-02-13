@@ -51,12 +51,12 @@ def generate_report(store_dir: str) -> List[str]:
     # Diversity
     from snackPersona.visualization.diversity_plot import (
         plot_diversity_heatmap,
-        plot_trait_radar,
-        plot_attribute_distribution,
+        plot_description_length,
+        plot_description_wordcloud,
     )
     paths.append(plot_diversity_heatmap(store_dir, output_dir))
-    paths.append(plot_trait_radar(store_dir, output_dir))
-    paths.append(plot_attribute_distribution(store_dir, output_dir))
+    paths.append(plot_description_length(store_dir, output_dir))
+    paths.append(plot_description_wordcloud(store_dir, output_dir))
 
     paths = [p for p in paths if p]
 

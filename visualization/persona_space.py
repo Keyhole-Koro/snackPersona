@@ -51,7 +51,7 @@ def _persona_to_vector_embedding(personas: List[PersonaGenotype]) -> np.ndarray:
     model = _get_embedding_model()
     if model is None:
         return _persona_to_vector_fallback(personas)
-    texts = [f"{p.name}: {p.description}" for p in personas]
+    texts = [f"{p.name}: {p.bio}" for p in personas]
     embeddings = model.encode(texts, show_progress_bar=False)
     return np.array(embeddings, dtype=np.float64)
 
@@ -61,7 +61,7 @@ def _persona_to_vector_fallback(personas: List[PersonaGenotype]) -> np.ndarray:
     chars = "abcdefghijklmnopqrstuvwxyz0123456789 "
     vectors = []
     for p in personas:
-        text = (p.name + " " + p.description).lower()
+        text = (p.name + " " + p.bio).lower()
         total = max(len(text), 1)
         vec = [text.count(c) / total for c in chars]
         vectors.append(vec)

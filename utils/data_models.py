@@ -17,24 +17,11 @@ class PersonaGenotype(BaseModel):
     # Core Identity (required for identification)
     name: str = Field(description="The persona's name (required for identification).")
     
-    # Flexible attributes - LLM can define any structure here
-    attributes: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="Flexible dictionary containing all persona attributes. "
-                   "The LLM can define any structure here including: age, occupation, backstory, "
-                   "core_values, hobbies, personality_traits, communication_style, topical_focus, "
-                   "interaction_policy, goals, or any other custom fields."
-    )
-    
-    # Helper method to get attributes with defaults
-    def get(self, key: str, default: Any = None) -> Any:
-        """Get an attribute value with a default fallback."""
-        return self.attributes.get(key, default)
-    
-    # Helper method to set attributes
-    def set(self, key: str, value: Any) -> None:
-        """Set an attribute value."""
-        self.attributes[key] = value
+    # Free-form bio - LLM interprets this directly
+    bio: str = Field(description="Free-form text description of the persona. "
+                                "This should include age, occupation, backstory, personality, "
+                                "goals, and any other relevant details in natural language.")
+
 
 
 class PersonaPhenotype(BaseModel):
@@ -70,6 +57,13 @@ class FitnessScores(BaseModel):
 
     # Diversity
     diversity: float = 0.0          # Variety in outputs
+
+    # Genotype Quality
+    bio_quality: float = 0.0        # How well the bio adheres to narrative/authentic style vs resume-speak
+
+    # Moto-mo-ko-mo-nai Metrics (Bluntness & Silence)
+    incisiveness: float = 0.0       # Blunt, truth-telling, cutting to the chase (Moto-mo-ko-mo-nai)
+    judiciousness: float = 0.0      # Smart silence; knowing when NOT to post
 
 
 # ==============================================================================

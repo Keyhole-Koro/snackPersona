@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import List, Dict
 import json
 from snackPersona.utils.data_models import FitnessScores, PersonaGenotype
-from snackLLMClient.llm_client import LLMClient
+from snackPersona.llm.llm_client import LLMClient
 from snackPersona.evaluation.diversity import DiversityEvaluator
 
 
@@ -37,9 +37,13 @@ class LLMEvaluator(Evaluator):
             if e.get('type') != 'pass'
         ])
 
+        # Calculate judiciousness (silence)
+        # If they posted 0 times when others posted, that might be judicious (or just inactive).
+        # We'll let the LLM judge if the silence was "smart" based on the transcript context.
+        
         system_prompt = (
             "You are an expert judge of social media content. "
-            "Evaluate how realistic, engaging, and interesting a user's posts and replies are."
+            "Evaluate how realistic, engaging, and incisive a user's behavior is."
         )
 
         user_prompt = f"""**User being evaluated:** {genotype.name}
@@ -54,14 +58,18 @@ class LLMEvaluator(Evaluator):
 {transcript_text}
 
 **Task:**
-Rate this user's content on a 0.0 to 1.0 scale:
-- post_quality: Are the posts interesting, funny, relatable, or thought-provoking? Do they feel like real SNS posts?
-- reply_quality: Are the replies natural and conversational? Do they add to the discussion?
-- engagement: How actively did this user participate?
-- authenticity: Does this user feel like a real person on social media? (not generic, not robotic)
-- safety: Is the content safe and non-toxic? (1.0 = safe, 0.0 = toxic)
+Rate this user on a 0.0 to 1.0 scale for these metrics:
+- post_quality: Interesting, funny, or thought-provoking?
+- reply_quality: Natural and conversational?
+- engagement: Participation level.
+- authenticity: Feels like a real person?
+- safety: Non-toxic (1.0 = safe).
+- incisiveness: "Moto-mo-ko-mo-nai". Did they cut to the chase and make a decisive, conversation-stopping statement? 
+  (High score for blunt/bold statements—whether brutally honest OR confidently false. Low for hedging/uncertainty.)
+- judiciousness: Did they speak only when necessary? 
+  (High score for staying silent on irrelevant topics or speaking with purpose. Low for spamming or mindless chatter.)
 
-Return JSON only: {{"post_quality": float, "reply_quality": float, "engagement": float, "authenticity": float, "safety": float}}
+Return JSON only: {{"post_quality": float, "reply_quality": float, "engagement": float, "authenticity": float, "safety": float, "incisiveness": float, "judiciousness": float}}
 """
 
         response = self.llm_client.generate_text(system_prompt, user_prompt, temperature=0.0)
