@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Set
+from datetime import datetime
 
 # ==============================================================================
 # 1. Persona Genotype and Phenotype
@@ -21,6 +22,9 @@ class PersonaGenotype(BaseModel):
     bio: str = Field(description="Free-form text description of the persona. "
                                 "This should include age, occupation, backstory, personality, "
                                 "goals, and any other relevant details in natural language.")
+    
+    # Island assignment (for topic-based clustering)
+    island_id: Optional[str] = Field(default=None, description="ID of the island (topic cluster) this persona belongs to.")
 
 
 
@@ -94,3 +98,54 @@ class MediaItem(BaseModel):
     content: str = Field(description="The text content of the article/media.")
     category: Optional[str] = Field(default=None, description="Optional category or tag (e.g., 'tech', 'politics').")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata (e.g., source, date).")
+
+
+# ==============================================================================
+# 5. Island Clustering (Topic-based Persona Clusters)
+# ==============================================================================
+
+class IslandContent(BaseModel):
+    """
+    Content accumulated by an Island - URLs, webpage content, and metadata.
+    """
+    url: str = Field(description="URL of the website or content.")
+    title: Optional[str] = Field(default=None, description="Title of the webpage/content.")
+    content_summary: Optional[str] = Field(default=None, description="Summary or excerpt of the content.")
+    discovered_at: str = Field(default_factory=lambda: datetime.now().isoformat(), 
+                               description="Timestamp when this content was discovered.")
+    visit_count: int = Field(default=1, description="Number of times this URL has been visited.")
+    estimated_update_frequency: Optional[str] = Field(default=None, 
+                                                     description="Estimated update frequency (e.g., 'daily', 'weekly', 'monthly').")
+    keywords: List[str] = Field(default_factory=list, description="Keywords associated with this content.")
+    source_persona: Optional[str] = Field(default=None, description="Name of persona who discovered this content.")
+
+
+class IslandCluster(BaseModel):
+    """
+    Represents a topic-based cluster (Island) where personas "live" and explore related content.
+    """
+    id: str = Field(description="Unique identifier for the island.")
+    topic: str = Field(description="Main topic or theme of this island (e.g., 'AI Technology', 'Climate Change').")
+    description: Optional[str] = Field(default=None, description="Detailed description of the island's focus.")
+    
+    # Personas living on this island
+    persona_ids: Set[str] = Field(default_factory=set, description="Set of persona names currently on this island.")
+    
+    # Accumulated content
+    content: List[IslandContent] = Field(default_factory=list, description="URLs and content accumulated by this island.")
+    
+    # Search queries that have been used
+    search_queries: List[str] = Field(default_factory=list, description="Search queries executed for this island.")
+    
+    # Keywords for evolution
+    evolved_keywords: List[str] = Field(default_factory=list, 
+                                       description="Keywords that have evolved to avoid site bias.")
+    
+    # Statistics
+    created_at: str = Field(default_factory=lambda: datetime.now().isoformat(), description="Island creation timestamp.")
+    last_updated: str = Field(default_factory=lambda: datetime.now().isoformat(), description="Last update timestamp.")
+    total_visits: int = Field(default=0, description="Total number of content visits on this island.")
+    
+    # Domain diversity tracking
+    visited_domains: Dict[str, int] = Field(default_factory=dict, 
+                                            description="Count of visits per domain to track bias.")
