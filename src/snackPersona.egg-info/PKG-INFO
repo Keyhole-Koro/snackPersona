@@ -1,0 +1,13 @@
+Metadata-Version: 2.4
+Name: snackPersona
+Version: 0.1.0
+Summary: Persona evolution and simulation system
+Requires-Python: >=3.10
+Requires-Dist: pydantic
+Requires-Dist: boto3
+Requires-Dist: openai
+Requires-Dist: sentence-transformers
+Requires-Dist: filelock
+Requires-Dist: google-genai
+Requires-Dist: matplotlib
+Requires-Dist: scikit-learn

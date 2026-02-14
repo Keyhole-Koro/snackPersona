@@ -1,0 +1,8 @@
+pydantic
+boto3
+openai
+sentence-transformers
+filelock
+google-genai
+matplotlib
+scikit-learn
