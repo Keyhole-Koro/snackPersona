@@ -18,6 +18,11 @@ src/snackPersona/evaluation/diversity/embedding.py
 src/snackPersona/evaluation/diversity/genotype.py
 src/snackPersona/integration/__init__.py
 src/snackPersona/integration/adapter.py
+src/snackPersona/islands/__init__.py
+src/snackPersona/islands/island_manager.py
+src/snackPersona/islands/keyword_generator.py
+src/snackPersona/islands/traveler_integration.py
+src/snackPersona/islands/tests/test_islands.py
 src/snackPersona/llm/__init__.py
 src/snackPersona/llm/client.py
 src/snackPersona/llm/gemini_client.py

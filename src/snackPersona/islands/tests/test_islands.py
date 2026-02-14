@@ -1,0 +1,185 @@
+"""
+Tests for Island clustering functionality.
+"""
+import pytest
+from snackPersona.utils.data_models import PersonaGenotype, IslandCluster, IslandContent
+from snackPersona.islands import IslandManager, PersonaKeywordGenerator
+
+
+class TestIslandDataModels:
+    """Test Island data models."""
+    
+    def test_island_cluster_creation(self):
+        """Test creating an IslandCluster."""
+        island = IslandCluster(
+            id="test_island",
+            topic="AI Technology"
+        )
+        assert island.id == "test_island"
+        assert island.topic == "AI Technology"
+        assert len(island.persona_ids) == 0
+        assert len(island.content) == 0
+    
+    def test_island_content_creation(self):
+        """Test creating IslandContent."""
+        content = IslandContent(
+            url="https://example.com/article",
+            title="Test Article",
+            keywords=["AI", "technology"]
+        )
+        assert content.url == "https://example.com/article"
+        assert content.title == "Test Article"
+        assert "AI" in content.keywords
+        assert content.visit_count == 1
+    
+    def test_persona_with_island_id(self):
+        """Test PersonaGenotype with island_id field."""
+        persona = PersonaGenotype(
+            name="TestUser",
+            bio="A test user interested in technology",
+            island_id="tech_island"
+        )
+        assert persona.island_id == "tech_island"
+
+
+class TestIslandManager:
+    """Test IslandManager functionality."""
+    
+    def test_create_island(self):
+        """Test creating an island."""
+        manager = IslandManager()
+        island = manager.create_island("island1", "Technology")
+        
+        assert island.id == "island1"
+        assert island.topic == "Technology"
+        assert "island1" in manager.islands
+    
+    def test_assign_persona_to_island(self):
+        """Test assigning a persona to an island."""
+        manager = IslandManager()
+        manager.create_island("island1", "Technology")
+        
+        persona = PersonaGenotype(
+            name="TechUser",
+            bio="A tech enthusiast"
+        )
+        
+        result = manager.assign_persona_to_island(persona, "island1")
+        assert result is True
+        assert persona.island_id == "island1"
+        assert "TechUser" in manager.islands["island1"].persona_ids
+    
+    def test_add_content_to_island(self):
+        """Test adding content to an island."""
+        manager = IslandManager()
+        manager.create_island("island1", "Technology")
+        
+        result = manager.add_content_to_island(
+            island_id="island1",
+            url="https://techcrunch.com/article",
+            title="Tech News",
+            keywords=["AI", "ML"]
+        )
+        
+        assert result is True
+        assert len(manager.islands["island1"].content) == 1
+        assert manager.islands["island1"].content[0].url == "https://techcrunch.com/article"
+    
+    def test_add_duplicate_content(self):
+        """Test adding duplicate URL increments visit count."""
+        manager = IslandManager()
+        manager.create_island("island1", "Technology")
+        
+        url = "https://example.com/article"
+        manager.add_content_to_island("island1", url, title="Article 1")
+        manager.add_content_to_island("island1", url, title="Article 1 Again")
+        
+        island = manager.islands["island1"]
+        assert len(island.content) == 1  # Still one entry
+        assert island.content[0].visit_count == 2  # But visit count increased
+    
+    def test_domain_diversity_metrics(self):
+        """Test domain diversity calculation."""
+        manager = IslandManager()
+        manager.create_island("island1", "Technology")
+        
+        # Add content from different domains
+        manager.add_content_to_island("island1", "https://techcrunch.com/article1")
+        manager.add_content_to_island("island1", "https://techcrunch.com/article2")
+        manager.add_content_to_island("island1", "https://wired.com/article1")
+        
+        metrics = manager.get_domain_diversity("island1")
+        assert metrics["unique_domains"] == 2
+        assert metrics["max_domain_ratio"] == 2/3  # techcrunch.com has 2 of 3 visits
+    
+    def test_persona_migration_between_islands(self):
+        """Test moving a persona between islands."""
+        manager = IslandManager()
+        manager.create_island("island1", "Technology")
+        manager.create_island("island2", "Science")
+        
+        persona = PersonaGenotype(
+            name="MigrantUser",
+            bio="A curious person"
+        )
+        
+        # Assign to first island
+        manager.assign_persona_to_island(persona, "island1")
+        assert "MigrantUser" in manager.islands["island1"].persona_ids
+        assert "MigrantUser" not in manager.islands["island2"].persona_ids
+        
+        # Migrate to second island
+        manager.assign_persona_to_island(persona, "island2")
+        assert "MigrantUser" not in manager.islands["island1"].persona_ids
+        assert "MigrantUser" in manager.islands["island2"].persona_ids
+        assert persona.island_id == "island2"
+
+
+class TestPersonaKeywordGenerator:
+    """Test PersonaKeywordGenerator functionality."""
+    
+    def test_fallback_keywords(self):
+        """Test fallback keyword generation without LLM."""
+        from snackPersona.llm.llm_client import LLMClient
+        
+        # Create a mock LLM client that will fail
+        class MockLLM:
+            def generate_text(self, *args, **kwargs):
+                raise Exception("Mock failure")
+        
+        generator = PersonaKeywordGenerator(MockLLM())
+        
+        persona = PersonaGenotype(
+            name="TestUser",
+            bio="A software engineer interested in machine learning and artificial intelligence"
+        )
+        
+        keywords = generator.generate_keywords(persona, num_keywords=3)
+        
+        # Should get fallback keywords
+        assert len(keywords) > 0
+        assert isinstance(keywords[0], str)
+    
+    def test_generate_search_query(self):
+        """Test generating a search query."""
+        class MockLLM:
+            def generate_text(self, *args, **kwargs):
+                # Return invalid JSON to trigger fallback
+                return "invalid json"
+        
+        generator = PersonaKeywordGenerator(MockLLM())
+        
+        persona = PersonaGenotype(
+            name="TestUser",
+            bio="A data scientist working on climate change models"
+        )
+        
+        query = generator.generate_search_query(persona, topic="climate")
+        
+        # Should generate some query string
+        assert isinstance(query, str)
+        assert len(query) > 0
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])
