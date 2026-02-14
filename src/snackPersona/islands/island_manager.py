@@ -12,6 +12,12 @@ from snackPersona.llm.llm_client import LLMClient
 
 logger = logging.getLogger("snackPersona")
 
+# Constants for faction management
+MIN_WORD_LENGTH_FOR_SIGNATURE = 3
+DOMAIN_DIVERSITY_WEIGHT = 0.4
+QUALITY_WEIGHT = 0.6
+MAX_DOMAINS_THRESHOLD = 10.0
+
 
 class IslandManager:
     """
@@ -464,6 +470,7 @@ Return ONLY a JSON array of strings, e.g. ["query1", "query2", ...]"""
     def _compute_query_signature(self, queries: List[str]) -> str:
         """
         Compute a signature hash for query patterns to detect similarity.
+        Uses SHA-256 for robust hashing with low collision probability.
         
         Args:
             queries: List of query strings
@@ -477,13 +484,13 @@ Return ONLY a JSON array of strings, e.g. ["query1", "query2", ...]"""
         all_words = set()
         for query in queries:
             words = query.lower().split()
-            # Filter common words
-            filtered = [w for w in words if len(w) > 3]
+            # Filter short words using constant
+            filtered = [w for w in words if len(w) > MIN_WORD_LENGTH_FOR_SIGNATURE]
             all_words.update(filtered)
         
         # Create signature from sorted unique words
         signature_text = " ".join(sorted(all_words))
-        return hashlib.md5(signature_text.encode()).hexdigest()
+        return hashlib.sha256(signature_text.encode()).hexdigest()
     
     def calculate_faction_similarity(self, island_id: str, faction_id1: str, 
                                     faction_id2: str) -> float:
@@ -621,10 +628,11 @@ Return ONLY a JSON array of strings, e.g. ["query1", "query2", ...]"""
         faction.unique_domains_discovered = unique_domains
         faction.content_quality_score = quality_score
         
-        # Compute overall fitness (weighted combination)
+        # Compute overall fitness (weighted combination using constants)
+        normalized_domains = min(unique_domains / MAX_DOMAINS_THRESHOLD, 1.0)
         faction.fitness_score = (
-            0.4 * min(unique_domains / 10.0, 1.0) +  # Domain diversity (normalized)
-            0.6 * quality_score  # Content quality
+            DOMAIN_DIVERSITY_WEIGHT * normalized_domains +
+            QUALITY_WEIGHT * quality_score
         )
         
         logger.debug(f"Updated fitness for faction {faction_id}: {faction.fitness_score:.2f}")
