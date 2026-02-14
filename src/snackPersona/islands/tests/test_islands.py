@@ -181,5 +181,109 @@ class TestPersonaKeywordGenerator:
         assert len(query) > 0
 
 
+class TestFactionManagement:
+    """Test Faction management functionality."""
+    
+    def test_create_faction(self):
+        """Test creating a faction within an island."""
+        manager = IslandManager()
+        manager.create_island("island1", "Technology")
+        
+        result = manager.create_faction("island1", "faction1", "Early Adopters", 
+                                       initial_personas=["Alice", "Bob"])
+        
+        assert result is True
+        island = manager.get_island("island1")
+        assert "faction1" in island.factions
+        assert island.factions["faction1"].name == "Early Adopters"
+        assert "Alice" in island.factions["faction1"].persona_ids
+    
+    def test_add_persona_to_faction(self):
+        """Test adding a persona to a faction."""
+        manager = IslandManager()
+        manager.create_island("island1", "Technology")
+        manager.create_faction("island1", "faction1", "Faction One")
+        
+        result = manager.add_persona_to_faction("island1", "faction1", "Charlie")
+        
+        assert result is True
+        assert "Charlie" in manager.islands["island1"].factions["faction1"].persona_ids
+    
+    def test_evolve_faction_queries(self):
+        """Test query evolution for a faction."""
+        class MockLLM:
+            def generate_text(self, *args, **kwargs):
+                return '["query1", "query2", "query3"]'
+        
+        manager = IslandManager(llm_client=MockLLM())
+        manager.create_island("island1", "Technology")
+        manager.create_faction("island1", "faction1", "Faction One")
+        
+        queries = manager.evolve_faction_queries("island1", "faction1", num_queries=3)
+        
+        assert len(queries) > 0
+        faction = manager.islands["island1"].factions["faction1"]
+        assert len(faction.evolved_queries) > 0
+    
+    def test_calculate_faction_similarity(self):
+        """Test similarity calculation between factions."""
+        manager = IslandManager()
+        manager.create_island("island1", "Technology")
+        manager.create_faction("island1", "faction1", "Faction One")
+        manager.create_faction("island1", "faction2", "Faction Two")
+        
+        # Add similar queries
+        manager.islands["island1"].factions["faction1"].evolved_queries = [
+            "AI machine learning", "deep learning neural networks"
+        ]
+        manager.islands["island1"].factions["faction2"].evolved_queries = [
+            "AI deep learning", "machine learning models"
+        ]
+        
+        similarity = manager.calculate_faction_similarity("island1", "faction1", "faction2")
+        
+        assert similarity > 0.0
+        assert similarity <= 1.0
+    
+    def test_natural_selection_factions(self):
+        """Test natural selection eliminates similar low-fitness factions."""
+        manager = IslandManager()
+        manager.create_island("island1", "Technology")
+        manager.create_faction("island1", "faction1", "High Fitness", ["Alice"])
+        manager.create_faction("island1", "faction2", "Low Fitness", ["Bob"])
+        
+        # Make them similar
+        manager.islands["island1"].factions["faction1"].evolved_queries = [
+            "AI machine learning deep learning"
+        ]
+        manager.islands["island1"].factions["faction2"].evolved_queries = [
+            "AI deep learning machine learning"
+        ]
+        
+        # Set different fitness scores
+        manager.islands["island1"].factions["faction1"].fitness_score = 0.8
+        manager.islands["island1"].factions["faction2"].fitness_score = 0.3
+        
+        eliminated = manager.natural_selection_factions("island1", similarity_threshold=0.5)
+        
+        assert len(eliminated) > 0
+        assert "faction2" in eliminated
+        assert "faction2" not in manager.islands["island1"].factions
+    
+    def test_update_faction_fitness(self):
+        """Test updating faction fitness metrics."""
+        manager = IslandManager()
+        manager.create_island("island1", "Technology")
+        manager.create_faction("island1", "faction1", "Faction One")
+        
+        manager.update_faction_fitness("island1", "faction1", 
+                                      unique_domains=5, quality_score=0.8)
+        
+        faction = manager.islands["island1"].factions["faction1"]
+        assert faction.unique_domains_discovered == 5
+        assert faction.content_quality_score == 0.8
+        assert faction.fitness_score > 0.0
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

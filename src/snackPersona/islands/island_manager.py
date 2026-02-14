@@ -319,6 +319,320 @@ Respond with only "YES" or "NO" and a brief reason."""
             return self.assign_persona_to_island(persona, target_island_id)
         return False
     
+    # ============================================================================
+    # Faction Management Methods
+    # ============================================================================
+    
+    def create_faction(self, island_id: str, faction_id: str, faction_name: str, 
+                      initial_personas: Optional[List[str]] = None) -> bool:
+        """
+        Create a new faction within an island.
+        
+        Args:
+            island_id: ID of the island
+            faction_id: Unique identifier for the faction
+            faction_name: Name of the faction
+            initial_personas: Optional list of persona names to add to faction
+            
+        Returns:
+            True if faction was created
+        """
+        from snackPersona.utils.data_models import Faction
+        
+        if island_id not in self.islands:
+            logger.error(f"Cannot create faction in non-existent island {island_id}")
+            return False
+        
+        island = self.islands[island_id]
+        
+        if faction_id in island.factions:
+            logger.warning(f"Faction {faction_id} already exists in island {island_id}")
+            return False
+        
+        faction = Faction(
+            id=faction_id,
+            name=faction_name,
+            persona_ids=set(initial_personas or [])
+        )
+        
+        island.factions[faction_id] = faction
+        logger.info(f"Created faction '{faction_name}' in island '{island_id}'")
+        return True
+    
+    def add_persona_to_faction(self, island_id: str, faction_id: str, persona_name: str) -> bool:
+        """
+        Add a persona to a faction.
+        
+        Args:
+            island_id: ID of the island
+            faction_id: ID of the faction
+            persona_name: Name of the persona
+            
+        Returns:
+            True if persona was added
+        """
+        if island_id not in self.islands:
+            logger.error(f"Island {island_id} not found")
+            return False
+        
+        island = self.islands[island_id]
+        
+        if faction_id not in island.factions:
+            logger.error(f"Faction {faction_id} not found in island {island_id}")
+            return False
+        
+        island.factions[faction_id].persona_ids.add(persona_name)
+        logger.debug(f"Added {persona_name} to faction {faction_id}")
+        return True
+    
+    def evolve_faction_queries(self, island_id: str, faction_id: str, 
+                              num_queries: int = 5) -> List[str]:
+        """
+        Evolve queries for a specific faction independently.
+        
+        Args:
+            island_id: ID of the island
+            faction_id: ID of the faction
+            num_queries: Number of queries to generate
+            
+        Returns:
+            List of evolved queries
+        """
+        if island_id not in self.islands:
+            logger.error(f"Island {island_id} not found")
+            return []
+        
+        island = self.islands[island_id]
+        
+        if faction_id not in island.factions:
+            logger.error(f"Faction {faction_id} not found")
+            return []
+        
+        faction = island.factions[faction_id]
+        
+        # If no LLM, generate simple variations
+        if not self.llm_client:
+            base_topic = island.topic
+            queries = [
+                f"{base_topic} {faction.name} perspective",
+                f"{base_topic} {faction.name} analysis",
+                f"{base_topic} latest {faction.name}"
+            ]
+            faction.evolved_queries.extend(queries[:num_queries])
+            return queries[:num_queries]
+        
+        # Use LLM to evolve queries based on faction's current queries
+        recent_queries = faction.evolved_queries[-5:] if faction.evolved_queries else []
+        
+        prompt = f"""Generate {num_queries} diverse search queries for faction "{faction.name}" 
+exploring the topic "{island.topic}".
+
+Faction's recent queries: {', '.join(recent_queries) if recent_queries else 'None yet'}
+Number of members: {len(faction.persona_ids)}
+
+Generate queries that:
+1. Build on previous queries but explore new angles
+2. Are distinct from other queries
+3. Reflect this faction's unique perspective
+
+Return ONLY a JSON array of strings, e.g. ["query1", "query2", ...]"""
+        
+        try:
+            response = self.llm_client.generate_text(
+                system_prompt="You are a search query evolution specialist.",
+                user_prompt=prompt,
+                temperature=0.9
+            )
+            
+            text = response.strip()
+            if "```" in text:
+                text = text.split("```json")[-1].split("```")[0].strip()
+            queries = json.loads(text)
+            
+            if isinstance(queries, list):
+                faction.evolved_queries.extend(queries[:num_queries])
+                # Update query signature for similarity detection
+                faction.query_signature = self._compute_query_signature(faction.evolved_queries)
+                logger.info(f"Evolved {len(queries)} queries for faction {faction_id}")
+                return queries[:num_queries]
+                
+        except Exception as e:
+            logger.warning(f"Failed to evolve queries for faction {faction_id}: {e}")
+        
+        return []
+    
+    def _compute_query_signature(self, queries: List[str]) -> str:
+        """
+        Compute a signature hash for query patterns to detect similarity.
+        
+        Args:
+            queries: List of query strings
+            
+        Returns:
+            Signature string
+        """
+        import hashlib
+        
+        # Extract key terms from queries
+        all_words = set()
+        for query in queries:
+            words = query.lower().split()
+            # Filter common words
+            filtered = [w for w in words if len(w) > 3]
+            all_words.update(filtered)
+        
+        # Create signature from sorted unique words
+        signature_text = " ".join(sorted(all_words))
+        return hashlib.md5(signature_text.encode()).hexdigest()
+    
+    def calculate_faction_similarity(self, island_id: str, faction_id1: str, 
+                                    faction_id2: str) -> float:
+        """
+        Calculate similarity between two factions based on their queries.
+        
+        Args:
+            island_id: ID of the island
+            faction_id1: ID of first faction
+            faction_id2: ID of second faction
+            
+        Returns:
+            Similarity score (0.0 to 1.0)
+        """
+        if island_id not in self.islands:
+            return 0.0
+        
+        island = self.islands[island_id]
+        
+        if faction_id1 not in island.factions or faction_id2 not in island.factions:
+            return 0.0
+        
+        faction1 = island.factions[faction_id1]
+        faction2 = island.factions[faction_id2]
+        
+        # Extract words from queries
+        words1 = set()
+        for q in faction1.evolved_queries:
+            words1.update(q.lower().split())
+        
+        words2 = set()
+        for q in faction2.evolved_queries:
+            words2.update(q.lower().split())
+        
+        if not words1 or not words2:
+            return 0.0
+        
+        # Jaccard similarity
+        intersection = words1.intersection(words2)
+        union = words1.union(words2)
+        
+        return len(intersection) / len(union) if union else 0.0
+    
+    def natural_selection_factions(self, island_id: str, similarity_threshold: float = 0.7,
+                                  fitness_weight: float = 0.6) -> List[str]:
+        """
+        Apply natural selection to factions: eliminate similar low-fitness factions.
+        
+        Args:
+            island_id: ID of the island
+            similarity_threshold: Threshold for considering factions similar (0.0-1.0)
+            fitness_weight: Weight for fitness vs similarity in selection (0.0-1.0)
+            
+        Returns:
+            List of eliminated faction IDs
+        """
+        if island_id not in self.islands:
+            logger.error(f"Island {island_id} not found")
+            return []
+        
+        island = self.islands[island_id]
+        
+        if len(island.factions) < 2:
+            return []  # Need at least 2 factions for selection
+        
+        eliminated = []
+        faction_ids = list(island.factions.keys())
+        
+        # Compare each pair of factions
+        for i in range(len(faction_ids)):
+            for j in range(i + 1, len(faction_ids)):
+                fid1, fid2 = faction_ids[i], faction_ids[j]
+                
+                # Skip if either already eliminated
+                if fid1 in eliminated or fid2 in eliminated:
+                    continue
+                
+                similarity = self.calculate_faction_similarity(island_id, fid1, fid2)
+                
+                if similarity >= similarity_threshold:
+                    faction1 = island.factions[fid1]
+                    faction2 = island.factions[fid2]
+                    
+                    # Compare fitness scores
+                    fitness1 = faction1.fitness_score
+                    fitness2 = faction2.fitness_score
+                    
+                    # Eliminate the lower fitness faction
+                    if fitness1 < fitness2:
+                        eliminated.append(fid1)
+                        logger.info(f"Natural selection: eliminating faction {fid1} "
+                                  f"(similarity: {similarity:.2f}, fitness: {fitness1:.2f} < {fitness2:.2f})")
+                    else:
+                        eliminated.append(fid2)
+                        logger.info(f"Natural selection: eliminating faction {fid2} "
+                                  f"(similarity: {similarity:.2f}, fitness: {fitness2:.2f} < {fitness1:.2f})")
+        
+        # Remove eliminated factions
+        for fid in eliminated:
+            # Reassign personas from eliminated faction to remaining factions
+            if fid in island.factions:
+                orphaned_personas = island.factions[fid].persona_ids
+                if orphaned_personas and island.factions:
+                    # Find highest fitness remaining faction
+                    remaining_factions = [f for f in island.factions.values() if f.id not in eliminated]
+                    if remaining_factions:
+                        best_faction = max(remaining_factions, key=lambda f: f.fitness_score)
+                        best_faction.persona_ids.update(orphaned_personas)
+                        logger.debug(f"Reassigned {len(orphaned_personas)} personas from {fid} to {best_faction.id}")
+                
+                del island.factions[fid]
+        
+        return eliminated
+    
+    def update_faction_fitness(self, island_id: str, faction_id: str, 
+                              unique_domains: int, quality_score: float):
+        """
+        Update fitness metrics for a faction based on exploration results.
+        
+        Args:
+            island_id: ID of the island
+            faction_id: ID of the faction
+            unique_domains: Number of unique domains discovered
+            quality_score: Quality score of content (0.0-1.0)
+        """
+        if island_id not in self.islands:
+            return
+        
+        island = self.islands[island_id]
+        
+        if faction_id not in island.factions:
+            return
+        
+        faction = island.factions[faction_id]
+        faction.unique_domains_discovered = unique_domains
+        faction.content_quality_score = quality_score
+        
+        # Compute overall fitness (weighted combination)
+        faction.fitness_score = (
+            0.4 * min(unique_domains / 10.0, 1.0) +  # Domain diversity (normalized)
+            0.6 * quality_score  # Content quality
+        )
+        
+        logger.debug(f"Updated fitness for faction {faction_id}: {faction.fitness_score:.2f}")
+    
+    # ============================================================================
+    # End Faction Management
+    # ============================================================================
+    
     def get_island(self, island_id: str) -> Optional[IslandCluster]:
         """Get an island by ID."""
         return self.islands.get(island_id)

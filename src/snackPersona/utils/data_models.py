@@ -120,6 +120,39 @@ class IslandContent(BaseModel):
     source_persona: Optional[str] = Field(default=None, description="Name of persona who discovered this content.")
 
 
+class Faction(BaseModel):
+    """
+    Represents a faction (sub-group) within an Island.
+    Factions evolve their own queries independently and compete through natural selection.
+    """
+    id: str = Field(description="Unique identifier for the faction.")
+    name: str = Field(description="Name of the faction.")
+    
+    # Members
+    persona_ids: Set[str] = Field(default_factory=set, description="Personas in this faction.")
+    
+    # Query evolution
+    evolved_queries: List[str] = Field(default_factory=list, 
+                                      description="Queries evolved by this faction.")
+    query_signature: Optional[str] = Field(default=None, 
+                                          description="Signature hash of query patterns for similarity detection.")
+    
+    # Fitness metrics
+    fitness_score: float = Field(default=0.0, 
+                                description="Fitness score based on content discovery and diversity.")
+    unique_domains_discovered: int = Field(default=0, 
+                                          description="Number of unique domains discovered by this faction.")
+    content_quality_score: float = Field(default=0.0, 
+                                        description="Quality score of discovered content.")
+    
+    # Lifecycle
+    created_at: str = Field(default_factory=lambda: datetime.now().isoformat(), 
+                           description="Faction creation timestamp.")
+    generation: int = Field(default=0, description="Generation number for evolutionary tracking.")
+    parent_faction_ids: List[str] = Field(default_factory=list, 
+                                         description="IDs of parent factions (for tracking lineage).")
+
+
 class IslandCluster(BaseModel):
     """
     Represents a topic-based cluster (Island) where personas "live" and explore related content.
@@ -130,6 +163,10 @@ class IslandCluster(BaseModel):
     
     # Personas living on this island
     persona_ids: Set[str] = Field(default_factory=set, description="Set of persona names currently on this island.")
+    
+    # Factions within the island
+    factions: Dict[str, "Faction"] = Field(default_factory=dict, 
+                                          description="Factions (sub-groups) within this island.")
     
     # Accumulated content
     content: List[IslandContent] = Field(default_factory=list, description="URLs and content accumulated by this island.")
