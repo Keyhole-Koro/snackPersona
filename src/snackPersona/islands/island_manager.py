@@ -3,6 +3,8 @@ Island Manager - Manages topic-based clusters of personas and their accumulated 
 """
 import logging
 import random
+import math
+import json
 from typing import List, Dict, Optional, Set
 from urllib.parse import urlparse
 from snackPersona.utils.data_models import IslandCluster, IslandContent, PersonaGenotype
@@ -162,7 +164,6 @@ class IslandManager:
         max_domain_ratio = max_visits / total_visits if total_visits > 0 else 0.0
         
         # Calculate entropy for diversity
-        import math
         entropy = 0.0
         for count in island.visited_domains.values():
             p = count / total_visits
@@ -228,7 +229,6 @@ Return only a JSON array of strings, e.g. ["keyword1", "keyword2", ...]"""
             )
             
             # Parse response
-            import json
             text = response.strip()
             if "```" in text:
                 text = text.split("```json")[-1].split("```")[0].strip()

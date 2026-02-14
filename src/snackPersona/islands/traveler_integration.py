@@ -2,7 +2,10 @@
 Integration adapter for connecting Island system with Traveler and Personas.
 """
 import logging
+import json
+import random
 from typing import List, Optional
+from urllib.parse import urlparse
 from snackPersona.utils.data_models import PersonaGenotype
 from snackPersona.islands.island_manager import IslandManager
 from snackPersona.islands.keyword_generator import PersonaKeywordGenerator
@@ -141,33 +144,46 @@ class IslandTravelerIntegration:
         island_topic = island.topic if island else None
         genome = self.persona_to_traveler_genome(persona, island_topic)
         
+        # Create a custom Traveler class that uses our query
+        class CustomQueryTraveler(Traveler):
+            def __init__(self, genome, memory, custom_q):
+                super().__init__(genome, memory)
+                self.custom_query = custom_q
+            
+            def _generate_query(self):
+                return self.custom_query
+        
         # Execute traveler with custom query
-        traveler = Traveler(genome, memory=memory)
-        
-        # Inject custom query by temporarily modifying genome
-        original_generate_query = traveler._generate_query
-        traveler._generate_query = lambda: query
-        
+        traveler = CustomQueryTraveler(genome, memory, query)
         result = traveler.execute()
-        
-        # Restore original method
-        traveler._generate_query = original_generate_query
         
         # Add results to island if persona is on one
         if island:
             self.island_manager.add_search_query(island.id, query)
-            for url in result.retrieved_urls:
-                # Extract title from headlines if available
-                title = None
-                if result.headlines:
-                    # Simple matching: use first headline as title
-                    title = result.headlines[0] if len(result.headlines) > 0 else None
+            
+            # Create a mapping of URLs to titles from headlines
+            # Assuming headlines correspond to URLs in order
+            url_titles = {}
+            for i, url in enumerate(result.retrieved_urls):
+                if i < len(result.headlines):
+                    url_titles[url] = result.headlines[i]
+            
+            # Add each URL with its corresponding content
+            for i, url in enumerate(result.retrieved_urls):
+                title = url_titles.get(url, None)
+                
+                # Get content summary for this specific URL
+                content_summary = None
+                if result.content_summary and "pages" in result.content_summary:
+                    pages = result.content_summary["pages"]
+                    if i < len(pages):
+                        content_summary = pages[i]
                 
                 self.island_manager.add_content_to_island(
                     island_id=island.id,
                     url=url,
                     title=title,
-                    content_summary=result.content_summary.get("pages", [])[0] if result.content_summary.get("pages") else None,
+                    content_summary=content_summary,
                     keywords=[query],
                     source_persona=persona.name
                 )
@@ -175,13 +191,14 @@ class IslandTravelerIntegration:
         logger.info(f"Exploration complete for {persona.name}: {len(result.retrieved_urls)} URLs discovered")
         return result
     
-    def explore_for_island(self, island_id: str, num_personas: int = 3) -> List[ExecutionResult]:
+    def explore_for_island(self, island_id: str, personas: List[PersonaGenotype], num_personas: int = 3) -> List[ExecutionResult]:
         """
         Execute exploration sessions for multiple personas on an island.
         Uses evolved keywords from the island to guide searches.
         
         Args:
             island_id: ID of the island
+            personas: List of PersonaGenotype objects available for exploration
             num_personas: Number of personas to use for exploration
             
         Returns:
@@ -192,25 +209,24 @@ class IslandTravelerIntegration:
             logger.error(f"Island {island_id} not found")
             return []
         
-        # Get personas on this island
-        persona_names = list(island.persona_ids)
-        if not persona_names:
+        # Filter personas that are on this island
+        island_personas = [p for p in personas if p.island_id == island_id]
+        if not island_personas:
             logger.warning(f"No personas on island {island_id}")
             return []
         
         # Select personas for exploration
-        import random
-        selected_personas = random.sample(persona_names, min(num_personas, len(persona_names)))
+        selected_personas = random.sample(island_personas, min(num_personas, len(island_personas)))
         
         # Evolve keywords for this island
         evolved_keywords = self.island_manager.evolve_keywords_for_island(island_id, max_keywords=5)
         
         results = []
-        for persona_name in selected_personas:
-            # Note: We need access to the actual PersonaGenotype objects
-            # This method assumes we can look them up somehow
-            # For now, we'll skip this and recommend using explore_for_persona directly
-            logger.warning(f"Skipping exploration for {persona_name} - PersonaGenotype lookup not implemented in this method")
+        for persona in selected_personas:
+            # Use evolved keywords as custom query if available
+            custom_query = evolved_keywords[0] if evolved_keywords else None
+            result = self.explore_for_persona(persona, custom_query=custom_query)
+            results.append(result)
         
         return results
     
