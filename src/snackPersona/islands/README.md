@@ -1,13 +1,16 @@
 # Island Clustering System
 
-The Island Clustering System provides topic-based organization of personas with integrated web search and crawling capabilities.
+The Island Clustering System provides topic-based organization of personas with integrated web search and crawling capabilities, including **faction-based query evolution with natural selection**.
 
 ## Overview
 
 The Island system allows personas to:
 - **Live on topic-based clusters (Islands)** - Each island represents a specific topic or theme
+- **Join factions within islands** - Form sub-groups with shared perspectives
 - **Generate search keywords** - Based on their bio and interests using LLM
+- **Evolve queries independently** - Each faction evolves its own query strategies
 - **Explore the web** - Search and crawl content relevant to their island's topic
+- **Compete through natural selection** - Similar low-fitness factions are eliminated
 - **Migrate between islands** - Move to different topics based on interests and exploration results
 - **Avoid site bias** - Evolve queries and track domain diversity
 
@@ -29,11 +32,34 @@ island = IslandCluster(
 
 **Key Features:**
 - Track personas assigned to the island
+- Manage multiple factions within the island
 - Accumulate discovered URLs and content
 - Record search queries and evolved keywords
 - Monitor domain diversity to avoid bias
 
-### 2. IslandContent
+### 2. Faction
+
+**NEW**: A sub-group within an island that evolves queries independently.
+
+```python
+from snackPersona.utils.data_models import Faction
+
+faction = Faction(
+    id="ethics_faction",
+    name="AI Ethics Advocates",
+    persona_ids={"Alice", "Bob"},
+    fitness_score=0.85
+)
+```
+
+**Key Features:**
+- Independent query evolution per faction
+- Fitness scoring based on domain diversity and content quality
+- Query signature for similarity detection
+- Natural selection eliminates similar low-fitness factions
+- Generational tracking for evolutionary analysis
+
+### 3. IslandContent
 
 Content (URLs, webpages) accumulated by an island.
 
@@ -57,7 +83,7 @@ content = IslandContent(
 
 ### 3. IslandManager
 
-Manages all islands and their operations.
+Manages all islands, factions, and their operations.
 
 ```python
 from snackPersona.islands import IslandManager
@@ -66,24 +92,32 @@ manager = IslandManager(llm_client=llm_client)
 
 # Create islands
 tech_island = manager.create_island("tech", "AI Technology")
-climate_island = manager.create_island("climate", "Climate Change")
 
-# Assign personas
+# Create factions within islands
+manager.create_faction("tech", "ethics_faction", "AI Ethics Group")
+manager.create_faction("tech", "research_faction", "Research Scientists")
+
+# Add personas to factions
+manager.add_persona_to_faction("tech", "ethics_faction", "Alice")
+
+# Evolve queries per faction
+queries = manager.evolve_faction_queries("tech", "ethics_faction", num_queries=5)
+
+# Update faction fitness based on exploration
+manager.update_faction_fitness("tech", "ethics_faction", 
+                              unique_domains=10, quality_score=0.85)
+
+# Calculate faction similarity
+similarity = manager.calculate_faction_similarity("tech", "faction1", "faction2")
+
+# Apply natural selection
+eliminated = manager.natural_selection_factions("tech", similarity_threshold=0.7)
+
+# Traditional island operations
 manager.assign_persona_to_island(persona, "tech")
-
-# Add content
-manager.add_content_to_island("tech", 
-    url="https://arxiv.org/example",
-    title="ML Paper",
-    keywords=["AI", "ML"])
-
-# Check diversity
+manager.add_content_to_island("tech", url="https://arxiv.org/example")
 diversity = manager.get_domain_diversity("tech")
-
-# Evolve keywords
 keywords = manager.evolve_keywords_for_island("tech", max_keywords=10)
-
-# Migrate personas
 manager.migrate_persona(persona, "climate")
 ```
 
@@ -265,13 +299,53 @@ Personas can migrate between islands when:
 
 Migration decisions can be LLM-based or rule-based.
 
+### Faction-Based Query Evolution
+
+**NEW**: Within each island, personas can form factions that evolve queries independently:
+
+**How it works:**
+1. **Faction Creation** - Sub-groups form within islands based on perspective or approach
+2. **Independent Evolution** - Each faction evolves its own search query strategies
+3. **Fitness Scoring** - Based on domain diversity and content quality discovered
+4. **Similarity Detection** - Factions are compared using query signature analysis
+5. **Natural Selection** - Similar factions with lower fitness are eliminated
+6. **Persona Reassignment** - Members of eliminated factions join the highest-fitness faction
+
+**Benefits:**
+- Diverse exploration strategies within a single topic
+- Competition drives better query evolution
+- Prevents redundant exploration patterns
+- Maintains population diversity through natural selection
+
+**Example:**
+```python
+# Create competing factions on an AI island
+manager.create_faction("ai_island", "ethics_faction", "AI Ethics Advocates")
+manager.create_faction("ai_island", "tech_faction", "Technical Innovators")
+
+# Each evolves queries independently
+ethics_queries = manager.evolve_faction_queries("ai_island", "ethics_faction")
+tech_queries = manager.evolve_faction_queries("ai_island", "tech_faction")
+
+# Update fitness based on exploration results
+manager.update_faction_fitness("ai_island", "ethics_faction", 
+                              unique_domains=15, quality_score=0.9)
+manager.update_faction_fitness("ai_island", "tech_faction",
+                              unique_domains=8, quality_score=0.7)
+
+# Natural selection eliminates similar low-fitness factions
+eliminated = manager.natural_selection_factions("ai_island", 
+                                               similarity_threshold=0.7)
+```
+
 ### Query Evolution
 
-To avoid site bias, islands evolve their search queries by:
+To avoid site bias, islands and factions evolve their search queries by:
 - Analyzing domain distribution
 - Identifying over-represented sources
 - Generating diverse alternative queries
 - Using LLM to create novel search angles
+- Competing through natural selection (factions)
 
 ### Domain Diversity Metrics
 
