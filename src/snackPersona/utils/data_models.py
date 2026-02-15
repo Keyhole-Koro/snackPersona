@@ -113,11 +113,19 @@ class IslandContent(BaseModel):
     content_summary: Optional[str] = Field(default=None, description="Summary or excerpt of the content.")
     discovered_at: str = Field(default_factory=lambda: datetime.now().isoformat(), 
                                description="Timestamp when this content was discovered.")
+    last_accessed_at: str = Field(default_factory=lambda: datetime.now().isoformat(),
+                                  description="Timestamp when this content was last accessed or revisited.")
     visit_count: int = Field(default=1, description="Number of times this URL has been visited.")
+    ttl_hours: int = Field(default=72, description="Time-to-live in hours before retention review is required.")
+    expires_at: Optional[str] = Field(default=None,
+                                      description="Expiration timestamp (ISO format) for retention review.")
     estimated_update_frequency: Optional[str] = Field(default=None, 
                                                      description="Estimated update frequency (e.g., 'daily', 'weekly', 'monthly').")
     keywords: List[str] = Field(default_factory=list, description="Keywords associated with this content.")
     source_persona: Optional[str] = Field(default=None, description="Name of persona who discovered this content.")
+    retention_votes: int = Field(default=0, description="Number of keep votes from personas in current retention cycle.")
+    discard_votes: int = Field(default=0, description="Number of discard votes from personas in current retention cycle.")
+    retention_rounds: int = Field(default=0, description="Number of consecutive retention reviews after TTL expiration.")
 
 
 class Faction(BaseModel):

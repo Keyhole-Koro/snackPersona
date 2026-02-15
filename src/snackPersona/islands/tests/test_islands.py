@@ -2,6 +2,7 @@
 Tests for Island clustering functionality.
 """
 import pytest
+from datetime import datetime, timedelta
 from snackPersona.utils.data_models import PersonaGenotype, IslandCluster, IslandContent
 from snackPersona.islands import IslandManager, PersonaKeywordGenerator
 
@@ -283,6 +284,128 @@ class TestFactionManagement:
         assert faction.unique_domains_discovered == 5
         assert faction.content_quality_score == 0.8
         assert faction.fitness_score > 0.0
+
+
+class TestIslandAutomationAndLifecycle:
+    """Test automatic island generation and content lifecycle controls."""
+
+    def test_auto_generate_islands_from_personas(self):
+        manager = IslandManager()
+        personas = [
+            PersonaGenotype(name="A", bio="AI researcher building transformer models and machine learning systems"),
+            PersonaGenotype(name="B", bio="Machine learning engineer working on AI models and data pipelines"),
+            PersonaGenotype(name="C", bio="Climate activist studying renewable energy and sustainability policy"),
+            PersonaGenotype(name="D", bio="Environmental scientist focused on climate data and emissions"),
+        ]
+
+        islands = manager.auto_generate_islands_from_personas(personas, similarity_threshold=0.10, min_cluster_size=1)
+
+        assert len(islands) >= 2
+        assert all(p.island_id is not None for p in personas)
+
+    def test_run_content_retention_cycle_discards_expired_low_value_content(self):
+        manager = IslandManager()
+        manager.create_island("island1", "AI Technology")
+
+        persona = PersonaGenotype(name="TechUser", bio="AI engineer and data scientist", island_id="island1")
+        manager.assign_persona_to_island(persona, "island1")
+
+        manager.add_content_to_island(
+            island_id="island1",
+            url="https://example.com/old",
+            title="Unrelated Page",
+            content_summary="Cooking and travel diary entry",
+            keywords=["cooking", "travel"],
+            ttl_hours=1,
+        )
+
+        island = manager.get_island("island1")
+        island.content[0].expires_at = (datetime.now() - timedelta(hours=2)).isoformat()
+
+        stats = manager.run_content_retention_cycle("island1", [persona], min_votes=1)
+        assert stats["evaluated"] == 1
+        assert stats["discarded"] == 1
+        assert len(island.content) == 0
+
+    def test_retention_cycle_discards_after_insufficient_votes_max_rounds(self):
+        manager = IslandManager()
+        manager.create_island("empty_island", "General Topic")
+
+        manager.add_content_to_island(
+            island_id="empty_island",
+            url="https://example.com/stale",
+            title="Stale Content",
+            content_summary="Low relevance memo",
+            keywords=["misc"],
+            ttl_hours=1,
+        )
+
+        island = manager.get_island("empty_island")
+        island.content[0].expires_at = (datetime.now() - timedelta(hours=2)).isoformat()
+
+        stats = manager.run_content_retention_cycle(
+            "empty_island",
+            personas=[],
+            min_votes=2,
+            max_rounds=1,
+        )
+        assert stats["evaluated"] == 1
+        assert stats["discarded"] == 1
+        assert len(island.content) == 0
+
+    def test_retention_cycle_grace_keeps_high_value_content(self):
+        manager = IslandManager()
+        manager.create_island("empty_island", "General Topic")
+
+        manager.add_content_to_island(
+            island_id="empty_island",
+            url="https://example.com/high-value",
+            title="Popular Content",
+            content_summary="Frequently revisited resource",
+            keywords=["popular"],
+            ttl_hours=1,
+        )
+
+        island = manager.get_island("empty_island")
+        island.content[0].visit_count = 7
+        island.content[0].expires_at = (datetime.now() - timedelta(hours=2)).isoformat()
+
+        stats = manager.run_content_retention_cycle(
+            "empty_island",
+            personas=[],
+            min_votes=2,
+            max_rounds=1,
+            high_value_visit_threshold=5,
+            grace_ttl_hours=12,
+        )
+        assert stats["evaluated"] == 1
+        assert stats["kept"] == 1
+        assert len(island.content) == 1
+        assert island.content[0].retention_rounds == 0
+
+    def test_split_overcrowded_islands(self):
+        manager = IslandManager()
+        manager.create_island("mega", "General Mixed Topics")
+
+        personas = []
+        for i in range(8):
+            p = PersonaGenotype(name=f"AI_{i}", bio="AI machine learning neural networks transformer research")
+            personas.append(p)
+            manager.assign_persona_to_island(p, "mega")
+        for i in range(8):
+            p = PersonaGenotype(name=f"CLIMATE_{i}", bio="Climate change renewable energy sustainability emissions policy")
+            personas.append(p)
+            manager.assign_persona_to_island(p, "mega")
+
+        new_islands = manager.split_overcrowded_islands(
+            personas=personas,
+            max_residents=10,
+            min_cohesion=0.55,
+            min_split_size=6,
+        )
+
+        assert len(new_islands) >= 1
+        assert len(manager.get_island("mega").persona_ids) < 16
 
 
 if __name__ == "__main__":

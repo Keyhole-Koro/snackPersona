@@ -25,6 +25,7 @@ from snackPersona.llm.llm_client import LLMClient
 from snackPersona.compiler.compiler import compile_persona
 from snackPersona.utils.media_dataset import MediaDataset
 from snackPersona.utils.logger import logger, EvolutionLogger
+from snackPersona.islands import IslandManager, IslandTravelerIntegration
 
 # Traveler Integration
 from snackPersona.integration.adapter import PersonaToTravelerAdapter
@@ -55,6 +56,21 @@ DEFAULT_CONFIG = {
         "group_size": 4,
         "reply_rounds": 3,
         "mutation_rate": 0.2,
+    },
+    "islands": {
+        "enabled": True,
+        "auto_generate": True,
+        "regenerate_each_generation": False,
+        "similarity_threshold": 0.2,
+        "lexical_weight": 0.6,
+        "embedding_weight": 0.4,
+        "min_cluster_size": 2,
+        "exploration_personas_per_island": 2,
+        "retention_min_votes": 2,
+        "split_enabled": True,
+        "split_max_residents": 30,
+        "split_min_cohesion": 0.2,
+        "split_min_size": 8,
     },
 }
 
@@ -105,6 +121,7 @@ class EvolutionEngine:
         self.niche_sigma = self.config["niching"]["sigma"]
         self.niche_alpha = self.config["niching"]["alpha"]
         self.sim_config = self.config["simulation"]
+        self.island_config = {**DEFAULT_CONFIG["islands"], **(self.config.get("islands") or {})}
 
         self.population: List[Individual] = []
         self.current_generation = 0
@@ -117,6 +134,10 @@ class EvolutionEngine:
         
         # Adapter
         self.adapter = PersonaToTravelerAdapter(llm_client)
+
+        # Island lifecycle
+        self.island_manager = IslandManager(llm_client=self.llm_client)
+        self.island_integration = IslandTravelerIntegration(self.island_manager, self.llm_client)
 
     def initialize_population(self, seed_genotypes: List[PersonaGenotype]):
         """
@@ -211,6 +232,10 @@ class EvolutionEngine:
                 'diversity': pop_diversity,
                 'fitness_mean': fitness_mean,
             }
+
+            if self.island_config.get("enabled", False):
+                island_stats = await self._run_island_lifecycle()
+                stats["islands"] = island_stats
             
             self.store.save_generation(gen, [ind.genotype for ind in self.population], stats=stats)
             self.store.save_transcripts(gen, gen_transcripts)
@@ -419,6 +444,74 @@ class EvolutionEngine:
                             
         except Exception as e:
             logger.error(f"Failed to save transcript to DB: {e}")
+
+    async def _run_island_lifecycle(self) -> Dict:
+        """Run island auto-generation, exploration, retention, and optional splitting."""
+        personas = [ind.genotype for ind in self.population]
+        if not personas:
+            return {"island_count": 0, "split_islands": 0, "exploration_runs": 0}
+
+        auto_generate = self.island_config.get("auto_generate", True)
+        regenerate = self.island_config.get("regenerate_each_generation", False)
+
+        if auto_generate and (not self.island_manager.islands or regenerate):
+            if regenerate:
+                self.island_manager.islands = {}
+                for persona in personas:
+                    persona.island_id = None
+            self.island_manager.auto_generate_islands_from_personas(
+                personas=personas,
+                similarity_threshold=float(self.island_config.get("similarity_threshold", 0.2)),
+                min_cluster_size=int(self.island_config.get("min_cluster_size", 2)),
+                lexical_weight=float(self.island_config.get("lexical_weight", 0.6)),
+                embedding_weight=float(self.island_config.get("embedding_weight", 0.4)),
+            )
+
+        # Keep island residents aligned with the latest generation's persona objects.
+        self.island_manager.synchronize_resident_memberships(personas)
+
+        exploration_runs = 0
+        exploration_tasks = []
+        for island in self.island_manager.list_islands():
+            exploration_tasks.append(
+                asyncio.to_thread(
+                    self.island_integration.explore_for_island,
+                    island.id,
+                    personas,
+                    int(self.island_config.get("exploration_personas_per_island", 2)),
+                )
+            )
+
+        if exploration_tasks:
+            exploration_results = await asyncio.gather(*exploration_tasks, return_exceptions=True)
+            for result in exploration_results:
+                if isinstance(result, Exception):
+                    logger.warning(f"Island exploration failed: {result}")
+                else:
+                    exploration_runs += len(result)
+
+        retention = self.island_manager.run_global_content_retention_cycle(
+            personas=personas,
+            min_votes=int(self.island_config.get("retention_min_votes", 2)),
+        )
+
+        split_ids: List[str] = []
+        if self.island_config.get("split_enabled", True):
+            split_ids = self.island_manager.split_overcrowded_islands(
+                personas=personas,
+                max_residents=int(self.island_config.get("split_max_residents", 30)),
+                min_cohesion=float(self.island_config.get("split_min_cohesion", 0.2)),
+                min_split_size=int(self.island_config.get("split_min_size", 8)),
+                lexical_weight=float(self.island_config.get("lexical_weight", 0.6)),
+                embedding_weight=float(self.island_config.get("embedding_weight", 0.4)),
+            )
+
+        return {
+            "island_count": len(self.island_manager.islands),
+            "exploration_runs": exploration_runs,
+            "split_islands": len(split_ids),
+            "retention": retention,
+        }
 
     # ------------------------------------------------------------------ #
     #  Reproduction

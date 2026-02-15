@@ -4,25 +4,6 @@
 
 Successfully implemented a comprehensive Island clustering system for the snackPersona repository, fulfilling all requirements from the problem statement.
 
-## Problem Statement (Japanese)
-```
-検索について
-キーワードをpersonaに生成させて、
-それをもとに検索エンジンapiで取得する
-
-さらにそのサイトにあるurlをクローリングしていく
-ここは自作ね
-
-また、islandというトピックのクラスタを作り、personaをそこに住まわせる
-
-たまに移住したりする
-
-islandにはwebサイトのurlやコンテンツ、推定したサイトの更新頻度などを蓄積する
-サイトが偏らないように、クエリやプロンプトを進化させる
-
-こんなのを実装してほしい
-```
-
 ## Implementation Summary
 
 ### ✅ Completed Requirements
